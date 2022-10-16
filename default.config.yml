@@ -35,6 +35,7 @@ dotfiles_files:
 
 homebrew_installed_packages:
   # - ansible # Installed via Pip.
+<<<<<<< HEAD
   - autoconf
   - bash-completion
   - doxygen
@@ -60,6 +61,12 @@ homebrew_installed_packages:
   - wget
   - wrk
   - zsh-history-substring-search
+=======
+  - hudochenkov/sshpass/sshpass
+  - telnet
+  - vlc
+  - kubectl
+>>>>>>> 80f2efd (update with homebrew packages installed on my mac)
 
 homebrew_taps: []
 
