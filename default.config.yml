@@ -35,16 +35,12 @@ dotfiles_files:
 
 homebrew_installed_packages:
   # - ansible # Installed via Pip.
->>>>>>> origin/master
   - hudochenkov/sshpass/sshpass
   - telnet
   - vlc
   - kubectl
 
 homebrew_taps: []
-=======
-=======
->>>>>>> origin/master
   - helm
   - macfuse
   - ext4fuse
@@ -63,8 +59,6 @@ homebrew_taps:
   - homebrew/cask
   - datreeio/datree
   - jeffreywildman/homebrew-virt-manager
->>>>>>> 84502c9 ((update) Include config over time to bring up to current state)
->>>>>>> origin/master
 
 homebrew_cask_appdir: /Applications
 homebrew_cask_apps:
@@ -80,16 +74,14 @@ homebrew_cask_apps:
   - sublime-text
   - transmit
 
-=======
 # See `geerlingguy.mas` role documentation for usage instructions.
 mas_installed_apps:
   - { id: 443987910, name: "1Password" }
->>>>>>> 84502c9 ((update) Include config over time to bring up to current state)
-=======
+
 # See `geerlingguy.mas` role documentation for usage instructions.
 mas_installed_apps:
   - { id: 443987910, name: "1Password" }
->>>>>>> origin/master
+
 mas_email: ""
 mas_password: ""
 
