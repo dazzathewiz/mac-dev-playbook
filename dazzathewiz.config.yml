@@ -39,7 +39,7 @@ sudoers_custom_config: ""
 dotfiles_repo: https://github.com/dazzathewiz/dotfiles.git
 dotfiles_repo_accept_hostkey: true
 dotfiles_repo_local_destination: ~/code/dotfiles
-dotfiles_repo_version: master # Replace with your default branch
+dotfiles_repo_version: master  # Replace with your default branch
 dotfiles_files:
   - .zshrc
   - .gitconfig
@@ -119,7 +119,7 @@ npm_packages: []
 #   version: "^2.6" # default: N/A
 pip_packages:
   - "xkcdpass"
-  
+
 # - name: mkdocs
 #   state: present # present/absent/latest, default: present
 #   version: "0.16.3" # default: N/A
