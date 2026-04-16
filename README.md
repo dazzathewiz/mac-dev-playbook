@@ -4,9 +4,76 @@
 
 [![CI][badge-gh-actions]][link-gh-actions]
 
-This playbook installs and configures most of the software I use on my Mac for web and software development. Some things in macOS are slightly difficult to automate, so I still have a few manual installation steps, but at least it's all documented here.
+This playbook installs and configures the software, tools, and macOS settings I use on my Mac for homelab management, DevOps, and general personal use. Some things in macOS are difficult to automate, so a few manual steps remain — but they're documented here.
 
-## Installation
+
+## 🚀 Quick Start (Bootstrap)
+
+This repository includes a bootstrap script to fully provision a new macOS machine with all required tools, applications, dotfiles, and system configuration.
+
+### 1. Run bootstrap script
+
+Execute the following command to provision your machine:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/dazzathewiz/mac-dev-playbook/main/bootstrap.sh | bash
+```
+
+> You may be prompted to complete the Xcode Command Line Tools installation on first run. If so, re-run the bootstrap script afterwards.
+
+---
+
+### What the bootstrap does
+
+The bootstrap script will:
+
+- Install Xcode Command Line Tools (if required)
+- Install Homebrew (if not already installed)
+- Install Ansible
+- Clone required repositories into `~/code/`
+  - `dotfiles`
+  - `mac-dev-playbook`
+  - Additional configured repositories
+- Install Ansible Galaxy dependencies
+
+---
+
+### 2. Run the Ansible playbook
+
+The playbook is run separately to allow review before applying system changes:
+
+```bash
+cd ~/code/mac-dev-playbook
+ansible-playbook main.yml -e @dazzathewiz.config.yml --ask-become-pass
+```
+
+---
+
+### 3. Authenticate GitHub CLI
+
+Once the playbook has installed `gh`, set up GitHub authentication so git operations work:
+
+```bash
+gh auth login
+```
+
+Alternatively, re-run the bootstrap script — it will detect `gh` is now installed and prompt for authentication automatically.
+
+---
+
+### Notes
+
+- Some steps may require sudo privileges.
+- Sign into the **Mac App Store** before running the playbook — `mas` requires an active App Store session to install apps.
+- SSH keys and additional secure configuration are handled separately.
+- OSX settings are handled by the `.osx` dotfile in the [dotfiles](https://github.com/dazzathewiz/dotfiles) repo.
+- The bootstrap script assumes **Apple Silicon** (Homebrew at `/opt/homebrew`). It is not tested on Intel Macs.
+
+---
+
+## ⚙️ Manual Setup (Alternative)
+
+If you prefer not to use the bootstrap script:
 
   1. Ensure Apple's command line tools are installed (`xcode-select --install` to launch the installer).
   2. [Install Ansible](https://docs.ansible.com/ansible/latest/installation_guide/index.html):
@@ -15,152 +82,241 @@ This playbook installs and configures most of the software I use on my Mac for w
      2. Upgrade Pip: `sudo pip3 install --upgrade pip`
      3. Install Ansible: `pip3 install ansible`
 
-  3. Clone or download this repository to your local drive.
+  3. Clone or download this repositories to your local drive:
+     1. "https://github.com/dazzathewiz/mac-dev-playbook.git" "mac-dev-playbook"
+     2. "https://github.com/dazzathewiz/dotfiles.git" "dotfiles"
   4. Run `ansible-galaxy install -r requirements.yml` inside this directory to install required Ansible roles.
-  5. Run `ansible-playbook main.yml --ask-become-pass` inside this directory. Enter your macOS account password when prompted for the 'BECOME' password.
+  5. Run `ansible-playbook main.yml -e @dazzathewiz.config.yml --ask-become-pass` inside this directory. Enter your macOS account password when prompted for the 'BECOME' password.
 
 > Note: If some Homebrew commands fail, you might need to agree to Xcode's license or fix some other Brew issue. Run `brew doctor` to see if this is the case.
 
-### Use with a remote Mac
+---
 
-You can use this playbook to manage other Macs as well; the playbook doesn't even need to be run from a Mac at all! If you want to manage a remote Mac, either another Mac on your network, or a hosted Mac like the ones from [MacStadium](https://www.macstadium.com), you just need to make sure you can connect to it with SSH:
+## ✅ Post-Setup Checklist (Manual)
 
-  1. (On the Mac you want to connect to:) Go to System Settings > Sharing.
-  2. Enable 'Remote Login'.
+After running the playbook, optionally verify:
 
-> You can also enable remote login on the command line:
->
->     sudo systemsetup -setremotelogin on
+- Menu bar icons are arranged as desired
+- VPN is configured and accessible
+- Any required third-party apps are signed in
+- Desktop / Spaces layout suits your workflow
+- FileVault disk encryption is enabled (see below)
 
-Then edit the `inventory` file in this repository and change the line that starts with `127.0.0.1` to:
+> ⚠️ This is a personal macOS provisioning playbook tailored to my environment.  
+> Some paths, applications, and repositories may need adjustment for other users.
 
-```
-[ip address or hostname of mac]  ansible_user=[mac ssh username]
-```
 
-If you need to supply an SSH password (if you don't use SSH keys), make sure to pass the `--ask-pass` parameter to the `ansible-playbook` command.
+## ⚠️ Not Managed by Ansible / `.osx`
 
-### Running a specific set of tagged tasks
+The following macOS settings are **intentionally not automated**. These are either:
 
-You can filter which part of the provisioning process to run by specifying a set of tags using `ansible-playbook`'s `--tags` flag. The tags available are `dotfiles`, `homebrew`, `mas`, `extra-packages` and `osx`.
+- user preference / low-value to codify
+- brittle across macOS versions
+- controlled by third-party apps
+- or not reliably configurable via `defaults`
 
-    ansible-playbook main.yml -K --tags "dotfiles,homebrew"
+### 🔑 FileVault Disk Encryption
 
-## Overriding Defaults
+FileVault is **not automated** but should be enabled on first use of any machine.
 
-Not everyone's development environment and preferred software configuration is the same.
+**Reason:**
+- Enabling FileVault requires generating a personal recovery key, which must be stored securely and cannot be handled non-interactively by a script
+- Requires a reboot to complete encryption
+- Running `fdesetup enable` in a playbook would require storing credentials in the repo
 
-You can override any of the defaults configured in `default.config.yml` by creating a `config.yml` file and setting the overrides in that file. For example, you can customize the installed packages and apps with something like:
+**Recommended approach:**
+- Enable manually via System Settings → Privacy & Security → FileVault before or immediately after first run of the playbook
+- Store the recovery key in 1Password
 
-```yaml
-homebrew_installed_packages:
-  - git
-  - go
+---
 
-mas_installed_apps:
-  - { id: 443987910, name: "1Password" }
-  - { id: 498486288, name: "Quick Resizer" }
-  - { id: 557168941, name: "Tweetbot" }
-  - { id: 497799835, name: "Xcode" }
+### 🍎 Menu Bar (Status Bar)
 
-composer_packages:
-  - name: hirak/prestissimo
-  - name: drush/drush
-    version: '^8.1'
+dotfiles `.osx` setting
+Menu bar configuration is **not enforced**.
 
-gem_packages:
-  - name: bundler
-    state: latest
+This includes:
+- Visibility of system icons (Wi-Fi, Bluetooth, Battery, etc.)
+- Ordering/position of icons
+- Control Center modules (Focus, Now Playing, etc.)
+- Third-party menu bar apps (e.g. VPN clients, utilities)
 
-npm_packages:
-  - name: webpack
+**Reason:**
+- Apple does not provide stable automation interfaces
+- Settings frequently change between macOS versions
+- Third-party apps manage their own menu bar presence
 
-pip_packages:
-  - name: mkdocs
+**Recommended approach:**
+- Configure manually via System Settings → Control Center
+- Treat as personal preference
 
-configure_dock: true
-dockitems_remove:
-  - Launchpad
-  - TV
-dockitems_persist:
-  - name: "Sublime Text"
-    path: "/Applications/Sublime Text.app/"
-    pos: 5
-```
+---
 
-Any variable can be overridden in `config.yml`; see the supporting roles' documentation for a complete list of available variables.
+### 🔐 VPN Configuration
+
+VPN setup is **not automated**.
+
+This includes:
+- VPN profiles (WireGuard, IPSec, etc.)
+- Menu bar visibility for VPN
+- Connection preferences
+
+**Reason:**
+- Credentials and secrets should not be stored in this repo
+- VPN configuration is environment-specific
+- Often managed by dedicated apps or MDM
+
+**Recommended approach:**
+- Configure manually or via the VPN client
+- Ensure VPN menu bar icon is enabled if required
+
+---
+
+### 🧩 Third-Party Application Settings
+
+Application-specific preferences are **not centrally managed**, including:
+
+- Menu bar apps (e.g. 1Password, Tailscale, Rectangle)
+- App-specific UI/UX preferences
+- Login/startup behaviour (unless explicitly configured elsewhere)
+
+**Reason:**
+- Each app uses its own config mechanism
+- Not all apps support CLI or idempotent configuration
+- Better handled per-app if needed
+
+---
+
+### 🖥️ Desktop / Mission Control Layout
+
+Not enforced:
+- Number of desktops (Spaces)
+- Assignment of apps to specific desktops
+- Desktop wallpaper per Space
+
+**Reason:**
+- Highly personal workflow preference
+- Dynamic by nature
+- Not reliably scriptable
+
+---
+
+### ⌨️ Keyboard & Input Edge Cases
+
+Not explicitly configured unless added manually:
+- Key repeat rates
+- Input sources / languages
+- Modifier key remapping
+
+**Reason:**
+- Defaults are acceptable
+- Preferences vary between users/devices
+
+---
+
+### 📸 Screenshot Location
+
+dotfiles `.osx` setting.
+Screenshot location is not set.
+
+**Default behaviour:**
+- Saves to Desktop
+
+**Reason:**
+- Low impact
+- Easy to change if desired
+
+
+## Reconfiguring Settings
+
+Refer to the [upstream geerlingguy/mac-dev-playbook README](https://github.com/geerlingguy/mac-dev-playbook) for advanced usage:
+
+- Running against a remote Mac
+- Running specific tagged tasks only
+- Overriding default configuration values
+
+
 
 ## Included Applications / Configuration (Default)
 
+Dock (pinned apps, in order):
+
+  1. Mission Control
+  2. Safari
+  3. Messages
+  4. Google Chrome
+  5. System Settings
+  6. Google Chat
+
+Dock (removed):
+
+  - Launchpad
+  - App Store
+  - iPhone Mirroring
+
 Applications (installed with Homebrew Cask):
 
-  - [ChromeDriver](https://sites.google.com/chromium.org/driver/)
-  - [Docker](https://www.docker.com/)
+  - [1Password](https://1password.com/) + CLI
+  - [Adobe Acrobat Reader](https://www.adobe.com/acrobat/pdf-reader.html)
+  - [balenaEtcher](https://etcher.balena.io/)
+  - [Citrix Workspace](https://www.citrix.com/products/receiver/)
+  - [Discord](https://discord.com/)
   - [Dropbox](https://www.dropbox.com/)
-  - [Firefox](https://www.mozilla.org/en-US/firefox/new/)
   - [Google Chrome](https://www.google.com/chrome/)
-  - [Handbrake](https://handbrake.fr/)
-  - [Homebrew](http://brew.sh/)
-  - [LICEcap](http://www.cockos.com/licecap/)
-  - [nvALT](http://brettterpstra.com/projects/nvalt/)
-  - [Sequel Ace](https://sequel-ace.com) (MySQL client)
+  - [Home Assistant](https://www.home-assistant.io/)
+  - [Lens](https://k8slens.dev/) (Kubernetes IDE)
+  - [Logitech G Hub](https://www.logitechg.com/en-au/innovation/g-hub.html)
+  - [macFUSE](https://macfuse.github.io/)
+  - [Microsoft Office](https://www.microsoft.com/en-au/microsoft-365/mac/microsoft-365-for-mac)
+  - [Mos](https://mos.caldis.me/) (smooth scrolling)
+  - [MQTT Explorer](https://mqtt-explorer.com/)
+  - [Plex](https://www.plex.tv/)
   - [Slack](https://slack.com/)
-  - [Sublime Text](https://www.sublimetext.com/)
-  - [Transmit](https://panic.com/transmit/) (S/FTP client)
+  - [Spotify](https://www.spotify.com/)
+  - [Visual Studio Code](https://code.visualstudio.com/)
+  - [VLC](https://www.videolan.org/vlc/)
+  - [Webex Meetings](https://www.webex.com/)
+  - [Zoom](https://zoom.us/)
 
 Packages (installed with Homebrew):
 
-  - autoconf
-  - bash-completion
-  - doxygen
-  - gettext
-  - gifsicle
-  - git
+  - age
+  - ansible
+  - balena-cli
+  - flux
   - gh
-  - go
-  - gpg
-  - httpie
-  - iperf
-  - libevent
-  - sqlite
-  - nmap
-  - node
-  - nvm
-  - php
-  - ssh-copy-id
-  - readline
-  - openssl
-  - pv
-  - wget
-  - wrk
-  - zsh-history-substring-search
+  - git
+  - helm
+  - kubernetes-cli
+  - mas
+  - sops
+  - sshpass
+  - starship
+  - telnet
+  - unar
 
-My [dotfiles](https://github.com/geerlingguy/dotfiles) are also installed into the current user's home directory, including the `.osx` dotfile for configuring many aspects of macOS for better performance and ease of use. You can disable dotfiles management by setting `configure_dotfiles: no` in your configuration.
+Homebrew taps:
 
-Finally, there are a few other preferences and settings added on for various apps and services.
+  - datreeio/datree
+  - fluxcd/tap
+  - hudochenkov/sshpass
 
-## Full / From-scratch setup guide
+Python packages (pip):
 
-Since I've used this playbook to set up something like 20 different Macs, I decided to write up a full 100% from-scratch install for my own reference (everyone's particular install will be slightly different).
+  - xkcdpass
 
-You can see my full from-scratch setup document here: [full-mac-setup.md](full-mac-setup.md).
+My [dotfiles](https://github.com/dazzathewiz/dotfiles) are also installed into the current user's home directory, including the `.osx` dotfile for configuring many aspects of macOS for better performance and ease of use. You can disable dotfiles management by setting `configure_dotfiles: no` in your configuration.
 
-## Testing the Playbook
+Dotfiles installed:
 
-Many people have asked me if I often wipe my entire workstation and start from scratch just to test changes to the playbook. Nope! This project is [continuously tested on GitHub Actions' macOS infrastructure](https://github.com/geerlingguy/mac-dev-playbook/actions?query=workflow%3ACI).
+  - `.zshrc`
+  - `.gitconfig`
+  - `.profile`
+  - `.config/starship.toml`
+  - `.osx`
 
-You can also run macOS itself inside a VM, for at least some of the required testing (App Store apps and some proprietary software might not install properly). I currently recommend:
-
-  - [UTM](https://mac.getutm.app)
-  - [Tart](https://github.com/cirruslabs/tart)
-
-## Ansible for DevOps
-
-Check out [Ansible for DevOps](https://www.ansiblefordevops.com/), which teaches you how to automate almost anything with Ansible.
 
 ## Author
 
-This project was created by [Jeff Geerling](https://www.jeffgeerling.com/) (originally inspired by [MWGriffin/ansible-playbooks](https://github.com/MWGriffin/ansible-playbooks)).
+This project was forked from the creator [Jeff Geerling](https://www.jeffgeerling.com/) (originally inspired by [MWGriffin/ansible-playbooks](https://github.com/MWGriffin/ansible-playbooks)).
 
-[badge-gh-actions]: https://github.com/geerlingguy/mac-dev-playbook/actions/workflows/ci.yml/badge.svg
-[link-gh-actions]: https://github.com/geerlingguy/mac-dev-playbook/actions/workflows/ci.yml
