@@ -35,4 +35,5 @@ jobs:
       - name: Syntax check playbook.
         run: |
           pip3 install ansible
+          ansible-galaxy install -r requirements.yml
           ansible-playbook main.yml -e @dazzathewiz.config.yml --syntax-check
