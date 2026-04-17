@@ -36,7 +36,7 @@ dockitems_persist:
     path: "/System/Applications/System Settings.app/"
     pos: 5
   - name: "Google Chat"
-    path: "/Applications/Google Chat.app/"
+    path: "{{ ansible_env.HOME }}/Applications/Chrome Apps.localized/Google Chat.app/"
     pos: 6
   - name: "1Password"
     path: "/Applications/1Password.app/"
@@ -114,8 +114,7 @@ homebrew_cask_apps:
   - zoom
 
 # See `geerlingguy.mas` role documentation for usage instructions.
-mas_installed_apps:
-  - { id: 1163852619, name: "Google Chat" }
+mas_installed_apps: []
 
 
 mas_email: ""
