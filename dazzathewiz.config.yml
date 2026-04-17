@@ -49,7 +49,6 @@ dotfiles_files:
 
 homebrew_installed_packages:
   - age
-  - python-packaging  # required for ansible pip module
   - ansible
   - balena-cli
   - flux
@@ -63,6 +62,7 @@ homebrew_installed_packages:
   - starship
   - telnet
   - unar
+  - xkcdpass
 
 homebrew_taps:
   - datreeio/datree
@@ -118,8 +118,7 @@ npm_packages: []
 # - name: webpack
 #   state: present # present/absent/latest, default: present
 #   version: "^2.6" # default: N/A
-pip_packages:
-  - "xkcdpass"
+pip_packages: []
 
 # - name: mkdocs
 #   state: present # present/absent/latest, default: present

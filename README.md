@@ -308,16 +308,13 @@ Packages (installed with Homebrew):
   - starship
   - telnet
   - unar
+  - xkcdpass
 
 Homebrew taps:
 
   - datreeio/datree
   - fluxcd/tap
   - hudochenkov/sshpass
-
-Python packages (pip):
-
-  - xkcdpass
 
 My [dotfiles](https://github.com/dazzathewiz/dotfiles) are also installed into the current user's home directory, including the `.osx` dotfile for configuring many aspects of macOS for better performance and ease of use. You can disable dotfiles management by setting `configure_dotfiles: no` in your configuration.
 
