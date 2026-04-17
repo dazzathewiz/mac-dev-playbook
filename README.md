@@ -40,12 +40,17 @@ The bootstrap script will:
 
 ### 2. Run the Ansible playbook
 
-The playbook is run separately to allow review before applying system changes:
+The playbook is run separately to allow review before applying system changes.
+
+On a fresh machine, Homebrew won't be in your shell PATH yet — run the `eval` first so `ansible-playbook` can be found:
 
 ```bash
+eval "$(/opt/homebrew/bin/brew shellenv)"
 cd ~/code/mac-dev-playbook
 ansible-playbook main.yml -e @dazzathewiz.config.yml --ask-become-pass
 ```
+
+> After the playbook installs your dotfiles, future terminal sessions will have Homebrew in PATH automatically.
 
 ---
 
