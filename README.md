@@ -16,7 +16,7 @@ This repository includes a bootstrap script to fully provision a new macOS machi
 Execute the following command to provision your machine:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/dazzathewiz/mac-dev-playbook/main/bootstrap.sh | bash
+curl -sSL https://raw.githubusercontent.com/dazzathewiz/mac-dev-playbook/master/bootstrap.sh | bash
 ```
 
 > You may be prompted to complete the Xcode Command Line Tools installation on first run. If so, re-run the bootstrap script afterwards.
