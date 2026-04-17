@@ -272,7 +272,7 @@ Dock (pinned apps, in order):
   3. Messages
   4. Google Chrome
   5. System Settings
-  6. Google Chat
+  6. Google Chat (Mac App Store)
   7. 1Password
   8. App Store
   9. Terminal
