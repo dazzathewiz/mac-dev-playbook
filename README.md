@@ -308,7 +308,6 @@ Packages (installed with Homebrew):
   - starship
   - telnet
   - unar
-  - xkcdpass
 
 Homebrew taps:
 

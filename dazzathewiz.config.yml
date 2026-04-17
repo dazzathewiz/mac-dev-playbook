@@ -62,7 +62,6 @@ homebrew_installed_packages:
   - starship
   - telnet
   - unar
-  - xkcdpass
 
 homebrew_taps:
   - datreeio/datree
