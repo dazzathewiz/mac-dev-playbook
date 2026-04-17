@@ -44,10 +44,19 @@ The playbook is run separately to allow review before applying system changes.
 
 On a fresh machine, Homebrew won't be in your shell PATH yet — run the `eval` first so `ansible-playbook` can be found:
 
+Some casks use `.pkg` installers that call `sudo` internally. macOS ties cached sudo credentials to the TTY, so Ansible's subprocess can't reuse them — a known limitation discussed in [geerlingguy/mac-dev-playbook#53](https://github.com/geerlingguy/mac-dev-playbook/issues/53). Grant temporary passwordless sudo before running the playbook and remove it immediately after:
+
 ```bash
 eval "$(/opt/homebrew/bin/brew shellenv)"
 cd ~/code/mac-dev-playbook
+
+# Grant temporary passwordless sudo for pkg-based cask installs
+echo "$(whoami) ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/ansible-bootstrap
+
 ansible-playbook main.yml -e @dazzathewiz.config.yml --ask-become-pass
+
+# Remove passwordless sudo immediately after
+sudo rm /etc/sudoers.d/ansible-bootstrap
 ```
 
 > After the playbook installs your dotfiles, future terminal sessions will have Homebrew in PATH automatically.
