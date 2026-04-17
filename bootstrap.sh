@@ -34,6 +34,7 @@ fi
 
 # Install Ansible
 if ! command -v ansible &>/dev/null; then
+  echo "==> Installing Ansible
   brew install ansible
 fi
 
@@ -47,7 +48,6 @@ ensure_repo "https://github.com/dazzathewiz/mac-dev-playbook.git" "mac-dev-playb
 # Regular working repos
 ensure_repo "https://github.com/dazzathewiz/infrastructure.git" "infrastructure"
 ensure_repo "https://github.com/dazzathewiz/fluxcd.git" "fluxcd"
-ensure_repo "https://github.com/dazzathewiz/k3sansibe.git" "k3s-ansible"
 
 # Install Ansible galaxy requirements
 echo "==> Installing Ansible Galaxy requirements"
