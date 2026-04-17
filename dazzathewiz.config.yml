@@ -103,6 +103,7 @@ homebrew_cask_apps:
   - mos
   - mqtt-explorer
   - plex
+  - scroll-reverser
   - slack
   - spotify
   - visual-studio-code
