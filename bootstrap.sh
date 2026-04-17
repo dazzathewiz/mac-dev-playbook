@@ -52,7 +52,7 @@ ensure_repo "https://github.com/dazzathewiz/fluxcd.git" "fluxcd"
 
 # Install Ansible galaxy requirements
 echo "==> Installing Ansible Galaxy requirements"
-ansible-galaxy install -r "$CODE_DIR/mac-dev-playbook/requirements.yml"
+ansible-galaxy install -r "$CODE_DIR/mac-dev-playbook/requirements.yml" -p "$CODE_DIR/mac-dev-playbook/roles/"
 
 # Run playbook after this bootstrap.
 # ansible-playbook "$CODE_DIR/mac-dev-playbook/main.yml" -e "@$CODE_DIR/mac-dev-playbook/dazzathewiz.config.yml"
