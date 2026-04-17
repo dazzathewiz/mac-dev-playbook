@@ -7,7 +7,17 @@ configure_osx: true
 configure_dock: true
 dockitems_remove:
   - Launchpad
-  - 'App Store'
+  - Mail
+  - Maps
+  - Photos
+  - FaceTime
+  - Calendar
+  - Contacts
+  - Reminders
+  - Notes
+  - TV
+  - Music
+  - Games
   - 'iPhone Mirroring'
 dockitems_persist:
   - name: "Mission Control"
@@ -26,8 +36,17 @@ dockitems_persist:
     path: "/System/Applications/System Settings.app/"
     pos: 5
   - name: "Google Chat"
-    path: "/Users/dazzathewiz/Applications/Chrome Apps.localized/Google Chat.app/"
+    path: "{{ ansible_env.HOME }}/Applications/Chrome Apps.localized/Google Chat.app/"
     pos: 6
+  - name: "1Password"
+    path: "/Applications/1Password.app/"
+    pos: 7
+  - name: "App Store"
+    path: "/System/Applications/App Store.app/"
+    pos: 8
+  - name: "Terminal"
+    path: "/System/Applications/Utilities/Terminal.app/"
+    pos: 9
 
 configure_sudoers: false
 sudoers_custom_config: ""
@@ -83,6 +102,7 @@ homebrew_cask_apps:
   - logitech-g-hub
   - macfuse
   - microsoft-office
+  - microsoft-teams
   - mos
   - mqtt-explorer
   - plex

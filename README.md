@@ -115,6 +115,7 @@ After running the playbook, optionally verify:
 - Any required third-party apps are signed in
 - Desktop / Spaces layout suits your workflow
 - FileVault disk encryption is enabled (see below)
+- Screen lock is set to **Immediately**: System Settings → Lock Screen → "Require password after screen saver begins or display is turned off"
 
 > ⚠️ This is a personal macOS provisioning playbook tailored to my environment.  
 > Some paths, applications, and repositories may need adjustment for other users.
@@ -128,6 +129,17 @@ The following macOS settings are **intentionally not automated**. These are eith
 - brittle across macOS versions
 - controlled by third-party apps
 - or not reliably configurable via `defaults`
+
+### 🔒 Screen Lock
+
+The `.osx` dotfile attempts to set screen lock via `defaults write com.apple.screensaver askForPassword` but **macOS Sequoia no longer honours this setting** — it is silently overridden by System Settings.
+
+The correct mechanism is `sysadminctl -screenLock immediate`, which requires admin privileges and is not yet wired into the `.osx` script as it needs further testing.
+
+**Recommended approach:**
+- Set manually: System Settings → Lock Screen → "Require password after screen saver begins or display is turned off" → **Immediately**
+
+---
 
 ### 🔑 FileVault Disk Encryption
 
@@ -261,11 +273,24 @@ Dock (pinned apps, in order):
   4. Google Chrome
   5. System Settings
   6. Google Chat
+  7. 1Password
+  8. App Store
+  9. Terminal
 
 Dock (removed):
 
   - Launchpad
-  - App Store
+  - Mail
+  - Maps
+  - Photos
+  - FaceTime
+  - Calendar
+  - Contacts
+  - Reminders
+  - Notes
+  - TV
+  - Music
+  - Games
   - iPhone Mirroring
 
 Applications (installed with Homebrew Cask):
@@ -282,6 +307,7 @@ Applications (installed with Homebrew Cask):
   - [Logitech G Hub](https://www.logitechg.com/en-au/innovation/g-hub.html)
   - [macFUSE](https://macfuse.github.io/)
   - [Microsoft Office](https://www.microsoft.com/en-au/microsoft-365/mac/microsoft-365-for-mac)
+  - [Microsoft Teams](https://www.microsoft.com/en-au/microsoft-teams/group-chat-software)
   - [Mos](https://mos.caldis.me/) (smooth scrolling)
   - [MQTT Explorer](https://mqtt-explorer.com/)
   - [Plex](https://www.plex.tv/)
