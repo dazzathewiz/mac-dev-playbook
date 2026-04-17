@@ -49,6 +49,7 @@ dotfiles_files:
 
 homebrew_installed_packages:
   - age
+  - python-packaging  # required for ansible pip module
   - ansible
   - balena-cli
   - flux
