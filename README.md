@@ -272,10 +272,9 @@ Dock (pinned apps, in order):
   3. Messages
   4. Google Chrome
   5. System Settings
-  6. Google Chat
-  7. 1Password
-  8. App Store
-  9. Terminal
+  6. 1Password
+  7. App Store
+  8. Terminal
 
 Dock (removed):
 

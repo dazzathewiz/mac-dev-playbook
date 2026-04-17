@@ -35,18 +35,15 @@ dockitems_persist:
   - name: "System Settings"
     path: "/System/Applications/System Settings.app/"
     pos: 5
-  - name: "Google Chat"
-    path: "{{ ansible_env.HOME }}/Applications/Chrome Apps.localized/Google Chat.app/"
-    pos: 6
   - name: "1Password"
     path: "/Applications/1Password.app/"
-    pos: 7
+    pos: 6
   - name: "App Store"
     path: "/System/Applications/App Store.app/"
-    pos: 8
+    pos: 7
   - name: "Terminal"
     path: "/System/Applications/Utilities/Terminal.app/"
-    pos: 9
+    pos: 8
 
 configure_sudoers: false
 sudoers_custom_config: ""
