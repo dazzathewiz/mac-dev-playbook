@@ -1,0 +1,49 @@
+---
+# Provisions the launch wrapper for the GitHub MCP server used by Claude
+# Desktop. The binary itself comes from homebrew_installed_packages.
+#
+# What this DOESN'T do:
+#   - Provision the PAT. That's a secret and creating it is interactive
+#     (`security add-generic-password`), so it stays a one-time manual step.
+#     This warns loudly if it's missing rather than leaving a wrapper that
+#     fails silently at launch.
+#   - Register the wrapper in Claude Desktop's config. Whether the installed
+#     Claude Desktop version still honours a hand-edited claude_desktop_config.json
+#     mcpServers entry, or has moved registration to Settings > Extensions,
+#     hasn't been confirmed yet — see README. That stays a manual step until
+#     it has.
+
+- name: Ensure local bin directory exists
+  file:
+    path: "{{ ansible_facts.user_dir }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Install the GitHub MCP wrapper (reads the PAT from Keychain at launch)
+  copy:
+    dest: "{{ claude_mcp_wrapper }}"
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      # Managed by mac-dev-playbook — do not edit by hand.
+      set -euo pipefail
+      TOKEN="$(security find-generic-password -a "$USER" -s {{ claude_mcp_keychain_service }} -w 2>/dev/null)" || {
+        echo "github-mcp-claude: no Keychain item '{{ claude_mcp_keychain_service }}'." >&2
+        echo "Create it with: security add-generic-password -a \"$USER\" -s {{ claude_mcp_keychain_service }} -w" >&2
+        exit 1
+      }
+      export GITHUB_PERSONAL_ACCESS_TOKEN="$TOKEN"
+      exec "{{ claude_mcp_binary }}" stdio --toolsets {{ claude_mcp_toolsets }}
+
+- name: Check whether the PAT is present in Keychain
+  command: security find-generic-password -a "{{ ansible_facts.user_id }}" -s "{{ claude_mcp_keychain_service }}"
+  register: claude_mcp_keychain
+  changed_when: false
+  failed_when: false
+
+- name: Warn if the PAT has not been provisioned
+  debug:
+    msg: >-
+      GitHub MCP token missing from Keychain. Run once, by hand:
+      security add-generic-password -a "$USER" -s {{ claude_mcp_keychain_service }} -w
+  when: claude_mcp_keychain.rc != 0

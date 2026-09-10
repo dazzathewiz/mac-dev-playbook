@@ -78,6 +78,7 @@ homebrew_installed_packages:
   - starship
   - telnet
   - unar
+  - github-mcp-server          # homebrew-core; GitHub MCP server for Claude
 
 homebrew_taps:
   - datreeio/datree
@@ -159,5 +160,12 @@ sublime_package_control:
   - "TrailingSpaces"
   - "WordingStatus"
 
+# homebrew_prefix comes from the geerlingguy.mac.homebrew role's defaults.
+claude_mcp_binary: "{{ homebrew_prefix }}/bin/github-mcp-server"
+claude_mcp_wrapper: "{{ ansible_facts.user_dir }}/.local/bin/github-mcp-claude"
+claude_mcp_keychain_service: claude-github-mcp
+claude_mcp_toolsets: context,repos,issues,pull_requests
+
 # Glob pattern to ansible task files to run after all other tasks are finished.
-post_provision_tasks: []
+post_provision_tasks:
+  - tasks/claude-mcp.yml

@@ -253,6 +253,48 @@ Screenshot location is not set.
 - Easy to change if desired
 
 
+## 🤖 Claude Desktop — GitHub MCP Server
+
+The playbook provisions everything needed to run the [GitHub MCP server](https://github.com/github/github-mcp-server) for Claude Desktop, short of the secret itself:
+
+- `github-mcp-server` is installed via Homebrew (`homebrew-core`, no tap required).
+- A launch wrapper is installed to `~/.local/bin/github-mcp-claude`. It reads a GitHub PAT out of the macOS Keychain at launch and `exec`s the server — the token never sits in a config file or in this repo.
+
+### One-time manual step: create the Keychain item
+
+The PAT is a secret, and `security add-generic-password` is interactive, so it is deliberately **not** provisioned by the playbook. If it's missing when the wrapper runs, the wrapper prints the exact command instead of failing cryptically:
+
+```bash
+security add-generic-password -a "$USER" -s claude-github-mcp -w
+```
+
+Use a **classic** GitHub token with **`public_repo`** scope only.
+
+### One-time manual step: register the server in Claude Desktop
+
+Registering the wrapper as an MCP server in Claude Desktop is **not automated**. The historical approach — hand-editing the `mcpServers` key in `~/Library/Application Support/Claude/claude_desktop_config.json` — may no longer be how the currently-installed Claude Desktop version registers custom servers: on this machine (Claude.app 1.49585.0) that file has no `mcpServers` key at all, and a sibling `config.json` shows `dxt:allowlist*` keys tied to an org-managed extensions marketplace, which suggests registration may have moved to Settings → Extensions. This hasn't been confirmed either way yet, so automating it is deferred.
+
+**Claude Desktop must be closed while the playbook runs and while you edit this file by hand** — the app also writes to it, and a race will clobber one side's changes.
+
+To register manually and find out which mechanism applies:
+
+1. Fully quit Claude Desktop (⌘Q, not just close the window).
+2. Merge (don't replace) into `claude_desktop_config.json`:
+
+   ```json
+   {
+     "mcpServers": {
+       "github": { "command": "~/.local/bin/github-mcp-claude" }
+     }
+   }
+   ```
+
+3. Reopen Claude Desktop and confirm the GitHub tools are available in a chat.
+
+If the tools don't appear, the JSON key is no longer honoured and the server likely needs registering as a `.mcpb` extension bundle via Settings → Extensions instead — which has no CLI path today, so it would stay a permanent manual step. Once this is confirmed either way, the playbook can be extended to automate registration too.
+
+---
+
 ## Reconfiguring Settings
 
 Refer to the [upstream geerlingguy/mac-dev-playbook README](https://github.com/geerlingguy/mac-dev-playbook) for advanced usage:
