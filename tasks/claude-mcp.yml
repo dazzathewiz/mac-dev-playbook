@@ -50,6 +50,22 @@
 # --- Claude Desktop config: merge, never overwrite -------------------------
 # The file can contain other MCP servers and is also written by the app, so
 # this reads-modifies-writes rather than templating the whole thing.
+#
+# Claude Desktop rewrites this file itself (indent=2, insertion order;
+# rewriting adds a remoteSessionFolderGrants entry per Cowork session), while
+# to_nice_json below produces indent=4, sorted keys. Comparing the write
+# task's rendered bytes against the file's current bytes would therefore
+# report "changed" every run even when the github entry is already correct —
+# and worse, since the write is a slurp-then-write-back, any Claude Desktop
+# write landing in that window would get silently clobbered by Ansible's
+# stale copy. The `when` below gates the write on the parsed github.command
+# value instead, so steady state is a true no-op: nothing is read back into
+# the file, and the app's own formatting/other-key writes are left alone.
+#
+# Only the `command` key is compared (not the whole github sub-dict), so a
+# key added under mcpServers.github by hand or another tool (e.g. args) isn't
+# fought on every run — this task's only job is making sure `command` points
+# at the wrapper.
 
 - name: Read existing Claude Desktop config
   slurp:
@@ -72,3 +88,6 @@
            'mcpServers': (claude_cfg.mcpServers | default({}))
              | combine({'github': {'command': claude_mcp_wrapper}})
          }, recursive=True) | to_nice_json }}
+  when: >-
+    (claude_cfg.mcpServers | default({})).get('github', {}).get('command')
+      != claude_mcp_wrapper
