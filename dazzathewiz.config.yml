@@ -79,6 +79,7 @@ homebrew_installed_packages:
   - telnet
   - unar
   - github-mcp-server          # homebrew-core; GitHub MCP server for Claude
+  - uv                         # installs proxmox-mcp-server (not in homebrew)
 
 homebrew_taps:
   - datreeio/datree
@@ -167,6 +168,30 @@ claude_mcp_keychain_service: claude-github-mcp
 claude_mcp_toolsets: context,repos,issues,pull_requests
 claude_desktop_config: "{{ ansible_facts.user_dir }}/Library/Application Support/Claude/claude_desktop_config.json"
 
+# Proxmox MCP server. Installed by uv rather than Homebrew (no formula
+# exists), unpinned — see tasks/proxmox-mcp.yml for why.
+#
+# proxmox_mcp_user MUST be the read-only PVEAuditor identity, never root@pam
+# (which is this server's own default). It has no read-only mode and exposes
+# arbitrary API calls, so the token is the only boundary.
+#
+# proxmox_mcp_host is the node FQDN, not the short name — the nodes carry
+# Let's Encrypt certs issued for the FQDN, which is what lets verify_ssl
+# stay on with no CA bundle. Note this pins the MCP server to one node.
+proxmox_mcp_binary: "{{ ansible_facts.user_dir }}/.local/bin/proxmox-mcp-server"
+proxmox_mcp_wrapper: "{{ ansible_facts.user_dir }}/.local/bin/proxmox-mcp-claude"
+proxmox_mcp_keychain_service: claude-proxmox-mcp
+proxmox_mcp_host: prox1.dazzathewiz.com
+proxmox_mcp_port: "8006"
+proxmox_mcp_user: claude-ro@pve
+proxmox_mcp_token_name: mcp
+proxmox_mcp_verify_ssl: "1"
+# Collapses 200+ tool schemas to 3 via semantic routing. No security cost —
+# proxmox_api_raw is in the full toolkit either way — but a large saving in
+# context on every request. Requires the [router] extra.
+proxmox_mcp_tool_routing: "true"
+
 # Glob pattern to ansible task files to run after all other tasks are finished.
 post_provision_tasks:
   - tasks/claude-mcp.yml
+  - tasks/proxmox-mcp.yml
