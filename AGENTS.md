@@ -15,7 +15,7 @@ Automate the setup of a new Mac to a known-good state: applications, CLI tools, 
 | `dazzathewiz.config.yml` | Personal configuration — source of truth for what gets installed and configured |
 | `default.config.yml` | Upstream defaults, overridden by `dazzathewiz.config.yml` |
 | `requirements.yml` | Ansible Galaxy role dependencies |
-| `tasks/claude-mcp.yml` | Post-provision task: installs the GitHub MCP server's launch wrapper for Claude Desktop |
+| `tasks/claude-mcp.yml` | Post-provision task: installs the GitHub MCP server's launch wrapper and registers it in Claude Desktop's config |
 
 ## Workflow
 
@@ -43,7 +43,6 @@ The following are documented in `README.md` and should not be added to the playb
 - **App Store sign-in** — must be done manually before running the playbook
 - **SSH keys** — handled separately
 - **GitHub PAT for the Claude MCP server** — a secret, and `security add-generic-password` is interactive; see README
-- **Registering the GitHub MCP server in Claude Desktop** — the mechanism the installed Claude Desktop version uses for this is unconfirmed (see README); stays a manual step until it is
 
 ## Conventions
 

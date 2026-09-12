@@ -1,17 +1,16 @@
 ---
 # Provisions the launch wrapper for the GitHub MCP server used by Claude
-# Desktop. The binary itself comes from homebrew_installed_packages.
+# Desktop, and registers it in Claude Desktop's config. The binary itself
+# comes from homebrew_installed_packages.
 #
-# What this DOESN'T do:
-#   - Provision the PAT. That's a secret and creating it is interactive
-#     (`security add-generic-password`), so it stays a one-time manual step.
-#     This warns loudly if it's missing rather than leaving a wrapper that
-#     fails silently at launch.
-#   - Register the wrapper in Claude Desktop's config. Whether the installed
-#     Claude Desktop version still honours a hand-edited claude_desktop_config.json
-#     mcpServers entry, or has moved registration to Settings > Extensions,
-#     hasn't been confirmed yet — see README. That stays a manual step until
-#     it has.
+# What this DOESN'T do: provision the PAT. That's a secret and creating it
+# is interactive (`security add-generic-password`), so it stays a one-time
+# manual step. This warns loudly if it's missing rather than leaving a
+# wrapper that fails silently at launch.
+#
+# Claude Desktop must be closed while this runs — it also writes to
+# claude_desktop_config.json, and a race between the two will clobber one
+# side's changes.
 
 - name: Ensure local bin directory exists
   file:
@@ -47,3 +46,48 @@
       GitHub MCP token missing from Keychain. Run once, by hand:
       security add-generic-password -a "$USER" -s {{ claude_mcp_keychain_service }} -w
   when: claude_mcp_keychain.rc != 0
+
+# --- Claude Desktop config: merge, never overwrite -------------------------
+# The file can contain other MCP servers and is also written by the app, so
+# this reads-modifies-writes rather than templating the whole thing.
+#
+# Claude Desktop rewrites this file itself (indent=2, insertion order;
+# rewriting adds a remoteSessionFolderGrants entry per Cowork session), while
+# to_nice_json below produces indent=4, sorted keys. Comparing the write
+# task's rendered bytes against the file's current bytes would therefore
+# report "changed" every run even when the github entry is already correct —
+# and worse, since the write is a slurp-then-write-back, any Claude Desktop
+# write landing in that window would get silently clobbered by Ansible's
+# stale copy. The `when` below gates the write on the parsed github.command
+# value instead, so steady state is a true no-op: nothing is read back into
+# the file, and the app's own formatting/other-key writes are left alone.
+#
+# Only the `command` key is compared (not the whole github sub-dict), so a
+# key added under mcpServers.github by hand or another tool (e.g. args) isn't
+# fought on every run — this task's only job is making sure `command` points
+# at the wrapper.
+
+- name: Read existing Claude Desktop config
+  slurp:
+    src: "{{ claude_desktop_config }}"
+  register: claude_cfg_raw
+  failed_when: false
+
+- name: Parse existing config (empty if absent)
+  set_fact:
+    claude_cfg: >-
+      {{ (claude_cfg_raw.content | b64decode | from_json)
+         if (claude_cfg_raw.content is defined) else {} }}
+
+- name: Register the github MCP server, preserving any others
+  copy:
+    dest: "{{ claude_desktop_config }}"
+    mode: "0600"
+    content: |
+      {{ claude_cfg | combine({
+           'mcpServers': (claude_cfg.mcpServers | default({}))
+             | combine({'github': {'command': claude_mcp_wrapper}})
+         }, recursive=True) | to_nice_json }}
+  when: >-
+    (claude_cfg.mcpServers | default({})).get('github', {}).get('command')
+      != claude_mcp_wrapper
