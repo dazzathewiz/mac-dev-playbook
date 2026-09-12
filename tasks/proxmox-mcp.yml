@@ -1,0 +1,102 @@
+---
+# Provisions the Proxmox MCP server for Claude Desktop: the uv-installed
+# binary, a launch wrapper that reads the API token from Keychain, and the
+# registration in Claude Desktop's config.
+#
+# Mirrors tasks/claude-mcp.yml. Read that file's comments too — the reasoning
+# behind the gated config write applies identically here.
+#
+# What this DOESN'T do: provision the Proxmox API token. That's a secret and
+# creating it is interactive (`security add-generic-password`), so it stays a
+# one-time manual step. This warns loudly if it's missing rather than leaving
+# a wrapper that fails silently at launch.
+#
+# The token must be a PVEAuditor token with privilege separation enabled.
+# This server has no read-only mode of its own and exposes proxmox_api_raw
+# (arbitrary API calls), so the token is the ONLY boundary — verify it 403s
+# on a write before pointing anything at it.
+#
+# Claude Desktop must be closed while this runs.
+
+- name: Ensure local bin directory exists
+  file:
+    path: "{{ ansible_facts.user_dir }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+# Unpinned on purpose. This playbook is a rebuild recipe, not a config
+# daemon — it only runs when something changes, so a pin here would drift
+# from the machine rather than control it. `creates` makes it a no-op once
+# installed; upgrade deliberately with `uv tool upgrade proxmox-mcp-server`.
+# The [router] extra is required for PROXMOX_MCP_TOOL_ROUTING below.
+- name: Install the Proxmox MCP server with uv
+  command: "{{ homebrew_prefix }}/bin/uv tool install proxmox-mcp-server[router]"
+  args:
+    creates: "{{ proxmox_mcp_binary }}"
+
+- name: Install the Proxmox MCP wrapper (reads the token from Keychain at launch)
+  copy:
+    dest: "{{ proxmox_mcp_wrapper }}"
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      # Managed by mac-dev-playbook — do not edit by hand.
+      set -euo pipefail
+      TOKEN="$(security find-generic-password -a "$USER" -s {{ proxmox_mcp_keychain_service }} -w 2>/dev/null)" || {
+        echo "proxmox-mcp-claude: no Keychain item '{{ proxmox_mcp_keychain_service }}'." >&2
+        echo "Create it with: security add-generic-password -a \"$USER\" -s {{ proxmox_mcp_keychain_service }} -w" >&2
+        exit 1
+      }
+      export PROXMOX_HOST="{{ proxmox_mcp_host }}"
+      export PROXMOX_PORT="{{ proxmox_mcp_port }}"
+      export PROXMOX_USER="{{ proxmox_mcp_user }}"
+      export PROXMOX_TOKEN_NAME="{{ proxmox_mcp_token_name }}"
+      export PROXMOX_TOKEN_VALUE="$TOKEN"
+      export PROXMOX_VERIFY_SSL="{{ proxmox_mcp_verify_ssl }}"
+      export TOOL_ROUTING="{{ proxmox_mcp_tool_routing }}"
+      exec "{{ proxmox_mcp_binary }}"
+
+- name: Check whether the Proxmox API token is present in Keychain
+  command: security find-generic-password -a "{{ ansible_facts.user_id }}" -s "{{ proxmox_mcp_keychain_service }}"
+  register: proxmox_mcp_keychain
+  changed_when: false
+  failed_when: false
+
+- name: Warn if the Proxmox API token has not been provisioned
+  debug:
+    msg: >-
+      Proxmox MCP token missing from Keychain. Run once, by hand:
+      security add-generic-password -a "$USER" -s {{ proxmox_mcp_keychain_service }} -w
+  when: proxmox_mcp_keychain.rc != 0
+
+# --- Claude Desktop config: merge, never overwrite -------------------------
+# Same gating as tasks/claude-mcp.yml, and for the same reasons: Claude
+# Desktop rewrites this file in its own format, so comparing rendered bytes
+# reports "changed" on every run and the slurp-then-write-back can clobber
+# the app's concurrent writes. Only `command` is compared, so keys added
+# under mcpServers.proxmox by hand aren't fought each run.
+
+- name: Read existing Claude Desktop config
+  slurp:
+    src: "{{ claude_desktop_config }}"
+  register: proxmox_cfg_raw
+  failed_when: false
+
+- name: Parse existing config (empty if absent)
+  set_fact:
+    proxmox_cfg: >-
+      {{ (proxmox_cfg_raw.content | b64decode | from_json)
+         if (proxmox_cfg_raw.content is defined) else {} }}
+
+- name: Register the proxmox MCP server, preserving any others
+  copy:
+    dest: "{{ claude_desktop_config }}"
+    mode: "0600"
+    content: |
+      {{ proxmox_cfg | combine({
+           'mcpServers': (proxmox_cfg.mcpServers | default({}))
+             | combine({'proxmox': {'command': proxmox_mcp_wrapper}})
+         }, recursive=True) | to_nice_json }}
+  when: >-
+    (proxmox_cfg.mcpServers | default({})).get('proxmox', {}).get('command')
+      != proxmox_mcp_wrapper
