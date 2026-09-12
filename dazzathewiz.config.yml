@@ -108,6 +108,7 @@ homebrew_cask_apps:
   - scroll-reverser
   - slack
   - spotify
+  - tailscale-app              # renamed from `tailscale`; reaches the homelab off-LAN
   - visual-studio-code
   - vlc
   - webex-meetings
