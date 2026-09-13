@@ -1,0 +1,97 @@
+---
+# Provisions the launch wrapper for the Unraid MCP server (Unraid Management
+# Agent plugin) and registers it in Claude Desktop's config.
+#
+# Unlike the GitHub and Proxmox servers, this one does NOT run on the Mac.
+# It runs on unNAS and speaks HTTP on :8043. Claude Desktop's config is
+# stdio-only — it takes a `command`, never a `url` — so mcp-remote runs
+# locally as the stdio<->HTTP bridge. Hence node + mcp-remote.
+#
+# mcp-remote comes from npm_packages (global), NOT npx. Resolving the
+# package at every launch overran Claude Desktop's startup window and
+# showed up as "Server disconnected". Same lesson as `uv tool install`
+# over `uvx` in tasks/proxmox-mcp.yml: never resolve a package at MCP
+# launch time, and always use an absolute path — GUI apps don't inherit
+# shell PATH.
+#
+# What this DOESN'T do: provision the bearer token. It's a secret and
+# creating the Keychain item is interactive, so it stays a one-time manual
+# step. This warns loudly rather than leaving a wrapper that fails at launch.
+#
+# Read-only is enforced ON UNNAS (READ_ONLY=true in the plugin config),
+# not by anything here. That is a server-side flag rather than a scoped
+# credential — weaker than the PVEAuditor token behind the Proxmox server —
+# so the agent is also bound to its tailnet address and gated by the
+# tailnet ACL. Re-test the refusal after any plugin update.
+#
+# Claude Desktop must be closed while this runs.
+
+- name: Ensure local bin directory exists
+  file:
+    path: "{{ ansible_facts.user_dir }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Install the Unraid MCP wrapper (reads the bearer token from Keychain at launch)
+  copy:
+    dest: "{{ unraid_mcp_wrapper }}"
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      # Managed by mac-dev-playbook — do not edit by hand.
+      set -euo pipefail
+      TOKEN="$(security find-generic-password -a "$USER" -s {{ unraid_mcp_keychain_service }} -w 2>/dev/null)" || {
+        echo "unraid-mcp-claude: no Keychain item '{{ unraid_mcp_keychain_service }}'." >&2
+        echo "Create it with: security add-generic-password -a \"$USER\" -s {{ unraid_mcp_keychain_service }} -w" >&2
+        exit 1
+      }
+      # --allow-http: mcp-remote refuses non-HTTPS URLs. Safe here only because
+      # this runs Mac->unNAS inside the tailnet (WireGuard-encrypted) and the
+      # agent is bound to its tailnet address. Revisit if that ever changes.
+      exec "{{ unraid_mcp_bridge }}" "{{ unraid_mcp_url }}" \
+        --allow-http \
+        --header "Authorization: Bearer ${TOKEN}"
+
+- name: Check whether the Unraid bearer token is present in Keychain
+  command: security find-generic-password -a "{{ ansible_facts.user_id }}" -s "{{ unraid_mcp_keychain_service }}"
+  register: unraid_mcp_keychain
+  changed_when: false
+  failed_when: false
+
+- name: Warn if the Unraid bearer token has not been provisioned
+  debug:
+    msg: >-
+      Unraid MCP token missing from Keychain. Run once, by hand:
+      security add-generic-password -a "$USER" -s {{ unraid_mcp_keychain_service }} -w
+  when: unraid_mcp_keychain.rc != 0
+
+# --- Claude Desktop config: merge, never overwrite -------------------------
+# Same gating as the other two task files, for the same reasons: Claude
+# Desktop rewrites this file in its own format, so comparing rendered bytes
+# reports "changed" every run and the slurp-then-write-back can clobber the
+# app's concurrent writes. Only `command` is compared.
+
+- name: Read existing Claude Desktop config
+  slurp:
+    src: "{{ claude_desktop_config }}"
+  register: unraid_cfg_raw
+  failed_when: false
+
+- name: Parse existing config (empty if absent)
+  set_fact:
+    unraid_cfg: >-
+      {{ (unraid_cfg_raw.content | b64decode | from_json)
+         if (unraid_cfg_raw.content is defined) else {} }}
+
+- name: Register the unraid MCP server, preserving any others
+  copy:
+    dest: "{{ claude_desktop_config }}"
+    mode: "0600"
+    content: |
+      {{ unraid_cfg | combine({
+           'mcpServers': (unraid_cfg.mcpServers | default({}))
+             | combine({'unraid': {'command': unraid_mcp_wrapper}})
+         }, recursive=True) | to_nice_json }}
+  when: >-
+    (unraid_cfg.mcpServers | default({})).get('unraid', {}).get('command')
+      != unraid_mcp_wrapper
