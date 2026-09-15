@@ -73,12 +73,14 @@ homebrew_installed_packages:
   - helm
   - kubernetes-cli
   - mas
+  - node                       # provides npm; mcp-remote bridges the Unraid MCP
   - sops
   - sshpass
   - starship
   - telnet
   - unar
   - github-mcp-server          # homebrew-core; GitHub MCP server for Claude
+  - uv                         # installs proxmox-mcp-server (not in homebrew)
 
 homebrew_taps:
   - datreeio/datree
@@ -107,6 +109,7 @@ homebrew_cask_apps:
   - scroll-reverser
   - slack
   - spotify
+  - tailscale-app              # renamed from `tailscale`; reaches the homelab off-LAN
   - visual-studio-code
   - vlc
   - webex-meetings
@@ -132,10 +135,12 @@ gem_packages: []
 # - name: bundler
 #   state: present # present/absent/latest, default: present
 #   version: "~> 1.15.1" # default: N/A
-npm_packages: []
-# - name: webpack
-#   state: present # present/absent/latest, default: present
-#   version: "^2.6" # default: N/A
+npm_packages:
+  # stdio<->HTTP bridge for the Unraid MCP server. Installed globally and
+  # called by absolute path rather than via npx: resolving the package at
+  # every launch overran Claude Desktop's startup window and surfaced as
+  # "Server disconnected". Unpinned, consistent with the other MCP tooling.
+  - name: mcp-remote
 pip_packages: []
 
 # - name: mkdocs
@@ -160,13 +165,67 @@ sublime_package_control:
   - "TrailingSpaces"
   - "WordingStatus"
 
+# ---------------------------------------------------------------------------
+# MCP servers for Claude Desktop
+#
+# Shared pattern: a wrapper script reads the secret from macOS Keychain and
+# execs the server, so no credential is ever written into
+# claude_desktop_config.json. The Keychain entries are created by hand, once.
+#
+# Two rules learned the hard way and encoded throughout:
+#   1. Never resolve a package at MCP launch time (no uvx, no npx) — Claude
+#      Desktop's startup window is short and an overrun reads as a crash.
+#   2. Always use absolute paths — GUI apps don't inherit shell PATH.
+# ---------------------------------------------------------------------------
+
 # homebrew_prefix comes from the geerlingguy.mac.homebrew role's defaults.
+claude_desktop_config: "{{ ansible_facts.user_dir }}/Library/Application Support/Claude/claude_desktop_config.json"
+
+# --- GitHub (local, stdio) ---
 claude_mcp_binary: "{{ homebrew_prefix }}/bin/github-mcp-server"
 claude_mcp_wrapper: "{{ ansible_facts.user_dir }}/.local/bin/github-mcp-claude"
 claude_mcp_keychain_service: claude-github-mcp
 claude_mcp_toolsets: context,repos,issues,pull_requests
-claude_desktop_config: "{{ ansible_facts.user_dir }}/Library/Application Support/Claude/claude_desktop_config.json"
+
+# --- Proxmox (local, stdio) ---
+# Installed by uv rather than Homebrew (no formula exists), unpinned — see
+# tasks/proxmox-mcp.yml.
+#
+# proxmox_mcp_user MUST be the read-only PVEAuditor identity, never root@pam
+# (which is this server's own default). It has no read-only mode and exposes
+# arbitrary API calls, so the token is the only boundary.
+#
+# proxmox_mcp_host is the node FQDN, not the short name — the nodes carry
+# Let's Encrypt certs issued for the FQDN, which is what lets verify_ssl
+# stay on with no CA bundle. Note this pins the MCP server to one node.
+proxmox_mcp_binary: "{{ ansible_facts.user_dir }}/.local/bin/proxmox-mcp-server"
+proxmox_mcp_wrapper: "{{ ansible_facts.user_dir }}/.local/bin/proxmox-mcp-claude"
+proxmox_mcp_keychain_service: claude-proxmox-mcp
+proxmox_mcp_host: prox1.dazzathewiz.com
+proxmox_mcp_port: "8006"
+proxmox_mcp_user: claude-ro@pve
+proxmox_mcp_token_name: mcp
+proxmox_mcp_verify_ssl: "1"
+# Collapses 200+ tool schemas to 3 via semantic routing. No security cost —
+# proxmox_api_raw is in the full toolkit either way — but a large saving in
+# context on every request. Requires the [router] extra.
+proxmox_mcp_tool_routing: "true"
+
+# --- Unraid (remote HTTP on unNAS, bridged by mcp-remote) ---
+# The only server that doesn't run on this Mac. Read-only is enforced on
+# unNAS (READ_ONLY=true in the plugin config) plus the agent being bound to
+# its tailnet address — nothing here enforces it.
+#
+# unraid_mcp_url uses the tailnet address deliberately, not 10.10.2.10: the
+# subnet route SNATs, which would attribute every request to a prox node in
+# unNAS's logs. A MagicDNS name would be better still.
+unraid_mcp_bridge: "{{ homebrew_prefix }}/bin/mcp-remote"
+unraid_mcp_wrapper: "{{ ansible_facts.user_dir }}/.local/bin/unraid-mcp-claude"
+unraid_mcp_keychain_service: claude-unraid-mcp
+unraid_mcp_url: "http://100.109.145.48:8043/mcp"
 
 # Glob pattern to ansible task files to run after all other tasks are finished.
 post_provision_tasks:
   - tasks/claude-mcp.yml
+  - tasks/proxmox-mcp.yml
+  - tasks/unraid-mcp.yml
