@@ -264,7 +264,7 @@ The playbook provisions everything needed to run the [GitHub MCP server](https:/
 
 **Claude Desktop must be closed while the playbook runs** — the app also writes to this file, and a race between the two will clobber one side's changes. (The `command`-only convergence check above keeps steady-state runs from creating that race at all, but a run that actually needs to write — first-time setup, or the wrapper path changing — still writes the whole file.)
 
-### One-time manual step: create the Keychain item
+### One-time manual step: create the Keychain item (GitHub)
 
 The PAT is a secret, and `security add-generic-password` is interactive, so it is deliberately **not** provisioned by the playbook. If it's missing when the wrapper runs, the wrapper prints the exact command instead of failing cryptically:
 
@@ -275,6 +275,40 @@ security add-generic-password -a "$USER" -s claude-github-mcp -w
 Use a **classic** GitHub token with **`public_repo`** scope only.
 
 If the tools don't appear, the JSON key is no longer honoured and the server likely needs registering as a `.mcpb` extension bundle via Settings → Extensions instead — which has no CLI path today, so it would stay a permanent manual step. Once this is confirmed either way, the playbook can be extended to automate registration too.
+
+## 🤖 Claude Desktop — Proxmox MCP Server
+
+The playbook provisions the Proxmox MCP server for Claude Desktop, short of the secret itself:
+
+- `proxmox-mcp-server` is installed with `uv tool install proxmox-mcp-server[router]` (no Homebrew formula exists). Unpinned, same reasoning as the Homebrew packages above — `creates:` makes the install a no-op once present; upgrade deliberately with `uv tool upgrade proxmox-mcp-server`. The `[router]` extra collapses 200+ tool schemas down to 3 via semantic routing, at no security cost (`proxmox_api_raw` is in the full toolkit either way) but a large context saving per request.
+- A launch wrapper is installed to `~/.local/bin/proxmox-mcp-claude`. It reads a Proxmox API token out of the macOS Keychain at launch and `exec`s the server.
+- The wrapper is registered as the `proxmox` entry under `mcpServers`, using the same command-only, read-modify-write convergence check as the GitHub server above (see that section for why).
+
+**This server has no read-only mode of its own** and exposes `proxmox_api_raw` (arbitrary API calls). The Keychain token is the *only* boundary — it must be a `claude-ro@pve` **PVEAuditor** token with privilege separation enabled, never `root@pam` (which is this server's own default). Verify the token 403s on a write before pointing anything at it.
+
+`proxmox_mcp_host` is the node's FQDN, not its short name — the node carries a Let's Encrypt cert issued for the FQDN, which is what lets `PROXMOX_VERIFY_SSL` stay on with no CA bundle or Keychain import. This does pin the server to a single node.
+
+### One-time manual step: create the Keychain item (Proxmox)
+
+```bash
+security add-generic-password -a "$USER" -s claude-proxmox-mcp -w
+```
+
+## 🤖 Claude Desktop — Unraid MCP Server
+
+The playbook provisions the Unraid MCP server (via the Unraid Management Agent plugin) for Claude Desktop, short of the secret itself. Unlike the GitHub and Proxmox servers, **this one does not run on the Mac** — it runs on unNAS and speaks HTTP on `:8043`. Claude Desktop's config is stdio-only (`command`, never `url`), so [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) runs locally as the stdio↔HTTP bridge:
+
+- `node` (providing `npm`) and the global `mcp-remote` package are installed via `homebrew_installed_packages` / `npm_packages`. `mcp-remote` is called by its resolved absolute path rather than via `npx` — resolving the package at every launch overran Claude Desktop's startup window and surfaced as "Server disconnected".
+- A launch wrapper is installed to `~/.local/bin/unraid-mcp-claude`. It reads a bearer token out of the macOS Keychain at launch and execs `mcp-remote` against `unraid_mcp_url` with `--allow-http` (safe only because this runs Mac→unNAS inside the Tailscale tailnet).
+- The wrapper is registered as the `unraid` entry under `mcpServers`, using the same command-only convergence check as the other two servers.
+
+Read-only is enforced **on unNAS** (`READ_ONLY=true` in the plugin config), not by anything in this repo — a server-side flag rather than a scoped credential, weaker than the Proxmox server's PVEAuditor token. The agent is also bound to its tailnet address and gated by the tailnet ACL as a second layer. Re-test the refusal after any plugin update. `unraid_mcp_url` deliberately uses the tailnet address rather than the LAN IP — the LAN subnet route SNATs, which would attribute every request to a Proxmox node in unNAS's logs.
+
+### One-time manual step: create the Keychain item (Unraid)
+
+```bash
+security add-generic-password -a "$USER" -s claude-unraid-mcp -w
+```
 
 ---
 

@@ -16,6 +16,8 @@ Automate the setup of a new Mac to a known-good state: applications, CLI tools, 
 | `default.config.yml` | Upstream defaults, overridden by `dazzathewiz.config.yml` |
 | `requirements.yml` | Ansible Galaxy role dependencies |
 | `tasks/claude-mcp.yml` | Post-provision task: installs the GitHub MCP server's launch wrapper and registers it in Claude Desktop's config |
+| `tasks/proxmox-mcp.yml` | Post-provision task: installs the Proxmox MCP server via `uv`, its launch wrapper, and registers it in Claude Desktop's config |
+| `tasks/unraid-mcp.yml` | Post-provision task: installs the Unraid MCP server's launch wrapper (bridged over HTTP via `mcp-remote`) and registers it in Claude Desktop's config |
 
 ## Workflow
 
@@ -43,6 +45,7 @@ The following are documented in `README.md` and should not be added to the playb
 - **App Store sign-in** — must be done manually before running the playbook
 - **SSH keys** — handled separately
 - **GitHub PAT for the Claude MCP server** — a secret, and `security add-generic-password` is interactive; see README
+- **Proxmox API token and Unraid bearer token for their MCP servers** — same reason; see README
 
 ## Conventions
 
