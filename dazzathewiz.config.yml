@@ -222,7 +222,7 @@ proxmox_mcp_tool_routing: "true"
 unraid_mcp_bridge: "{{ homebrew_prefix }}/bin/mcp-remote"
 unraid_mcp_wrapper: "{{ ansible_facts.user_dir }}/.local/bin/unraid-mcp-claude"
 unraid_mcp_keychain_service: claude-unraid-mcp
-unraid_mcp_url: "http://100.109.145.48:8043/mcp"
+unraid_mcp_url: "http://unnas.dazzathewiz.com:8043/mcp"
 
 # Glob pattern to ansible task files to run after all other tasks are finished.
 post_provision_tasks:

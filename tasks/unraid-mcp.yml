@@ -45,9 +45,16 @@
         echo "Create it with: security add-generic-password -a \"$USER\" -s {{ unraid_mcp_keychain_service }} -w" >&2
         exit 1
       }
-      # --allow-http: mcp-remote refuses non-HTTPS URLs. Safe here only because
-      # this runs Mac->unNAS inside the tailnet (WireGuard-encrypted) and the
-      # agent is bound to its tailnet address. Revisit if that ever changes.
+      # --allow-http: mcp-remote refuses non-HTTPS URLs. The agent serves plain
+      # HTTP and is bound to 10.10.2.10 (br0), so the bearer token crosses the
+      # LAN in cleartext on at least one hop in every state:
+      #   Tailscale off, on-LAN -> Mac -> UniFi -> unNAS, plaintext throughout
+      #   Tailscale on          -> encrypted Mac -> prox router, then plaintext
+      #                            prox -> unNAS
+      # Accepted deliberately: read-only agent, no write scope on the token, and
+      # 10.10.2.0/24 is a controlled VLAN. Revisit if the agent gains TLS, or if
+      # it is rebound to its tailnet address (which would restore end-to-end
+      # WireGuard and make --allow-http genuinely safe again).
       exec "{{ unraid_mcp_bridge }}" "{{ unraid_mcp_url }}" \
         --allow-http \
         --header "Authorization: Bearer ${TOKEN}"
