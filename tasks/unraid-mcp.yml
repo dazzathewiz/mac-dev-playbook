@@ -20,9 +20,8 @@
 #
 # Read-only is enforced ON UNNAS (READ_ONLY=true in the plugin config),
 # not by anything here. That is a server-side flag rather than a scoped
-# credential — weaker than the PVEAuditor token behind the Proxmox server —
-# so the agent is also bound to its tailnet address and gated by the
-# tailnet ACL. Re-test the refusal after any plugin update.
+# credential — weaker than the PVEAuditor token behind the Proxmox server.
+# Re-test the refusal after any plugin update.
 #
 # Claude Desktop must be closed while this runs.
 
@@ -45,9 +44,8 @@
         echo "Create it with: security add-generic-password -a \"$USER\" -s {{ unraid_mcp_keychain_service }} -w" >&2
         exit 1
       }
-      # --allow-http: mcp-remote refuses non-HTTPS URLs. Safe here only because
-      # this runs Mac->unNAS inside the tailnet (WireGuard-encrypted) and the
-      # agent is bound to its tailnet address. Revisit if that ever changes.
+      # --allow-http: mcp-remote refuses non-HTTPS URLs, and the agent serves
+      # HTTP only.
       exec "{{ unraid_mcp_bridge }}" "{{ unraid_mcp_url }}" \
         --allow-http \
         --header "Authorization: Bearer ${TOKEN}"
