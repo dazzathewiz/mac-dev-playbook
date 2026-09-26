@@ -299,16 +299,69 @@ security add-generic-password -a "$USER" -s claude-proxmox-mcp -w
 The playbook provisions the Unraid MCP server (via the Unraid Management Agent plugin) for Claude Desktop, short of the secret itself. Unlike the GitHub and Proxmox servers, **this one does not run on the Mac** — it runs on unNAS and speaks HTTP on `:8043`. Claude Desktop's config is stdio-only (`command`, never `url`), so [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) runs locally as the stdio↔HTTP bridge:
 
 - `node` (providing `npm`) and the global `mcp-remote` package are installed via `homebrew_installed_packages` / `npm_packages`. `mcp-remote` is called by its resolved absolute path rather than via `npx` — resolving the package at every launch overran Claude Desktop's startup window and surfaced as "Server disconnected".
-- A launch wrapper is installed to `~/.local/bin/unraid-mcp-claude`. It reads a bearer token out of the macOS Keychain at launch and execs `mcp-remote` against `unraid_mcp_url` with `--allow-http` (safe only because this runs Mac→unNAS inside the Tailscale tailnet).
+- A launch wrapper is installed to `~/.local/bin/unraid-mcp-claude`. It reads a bearer token out of the macOS Keychain at launch and execs `mcp-remote` against `unraid_mcp_url` with `--allow-http`, which `mcp-remote` requires for a non-HTTPS URL.
 - The wrapper is registered as the `unraid` entry under `mcpServers`, using the same command-only convergence check as the other two servers.
 
-Read-only is enforced **on unNAS** (`READ_ONLY=true` in the plugin config), not by anything in this repo — a server-side flag rather than a scoped credential, weaker than the Proxmox server's PVEAuditor token. The agent is also bound to its tailnet address and gated by the tailnet ACL as a second layer. Re-test the refusal after any plugin update. `unraid_mcp_url` deliberately uses the tailnet address rather than the LAN IP — the LAN subnet route SNATs, which would attribute every request to a Proxmox node in unNAS's logs.
+Read-only is enforced **on unNAS** (`READ_ONLY=true` in the plugin config), not by anything in this repo — a server-side flag rather than a scoped credential, weaker than the Proxmox server's PVEAuditor token. Re-test the refusal after any plugin update.
 
 ### One-time manual step: create the Keychain item (Unraid)
 
 ```bash
 security add-generic-password -a "$USER" -s claude-unraid-mcp -w
 ```
+
+## 🤖 Claude Desktop — Kubernetes MCP Server
+
+The playbook provisions the [Kubernetes MCP server](https://github.com/containers/kubernetes-mcp-server) for the k3s cluster, short of the credential itself:
+
+- `kubernetes-mcp-server` is installed via Homebrew (`homebrew-core`, a native Go binary), not `npx`. The npm package is a node shim: it needs `node` on PATH, which Claude Desktop doesn't provide, and it `console.log`s to stdout (the MCP channel) when it gets a signal. Resolving it at launch would also repeat the startup-window overrun that hit `mcp-remote`.
+- A launch wrapper is installed to `~/.local/bin/kubernetes-mcp-claude`. It exports `KUBECONFIG` and passes `--kubeconfig`, both pointing at a scoped file (`~/.kube/mcp-view.config`, resolved to an absolute path at play time). It then `exec`s the server with `--read-only --disable-multi-cluster --toolsets core`.
+- The wrapper is registered as the `kubernetes` entry under `mcpServers`, using the same command-only convergence check as the other three servers.
+
+**Read-only is enforced in two independent layers**, unlike Proxmox, which relies on its token alone:
+
+1. **Server.** `--read-only` exposes only tools annotated `readOnlyHint`. `--disable-multi-cluster` and `--toolsets core` remove the context and kubeconfig tools altogether.
+2. **Credential.** The kubeconfig holds **exactly one context**: the `claude-mcp-view` ServiceAccount, bound to the built-in `view` ClusterRole plus a nodes-only read role. It's declared in the fluxcd repo (`infrastructure/configs/claude-mcp-view.yaml`). `view` excludes Secrets by design. The single context isn't tidiness. This server ships context-management tools, so if it could see the admin context, switching to it would be the escalation path, and that path never has to defeat `--read-only`. **Never point this at `~/.kube/config`, and never merge contexts into it.**
+
+### One-time manual step: build the scoped kubeconfig (Kubernetes)
+
+The token is a live credential, so the playbook deliberately **doesn't** build this file. It's a mode `0600` file, handled the same way as the admin kubeconfig rather than through Keychain. The playbook warns if the file is missing, and the wrapper refuses to start without it. Build it after the fluxcd ServiceAccount has reconciled, using your admin kubeconfig to *read* the token and the API endpoint:
+
+```bash
+SERVER="$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
+TOKEN="$(kubectl -n mcp get secret claude-mcp-view-token -o jsonpath='{.data.token}' | base64 -d)"
+CA="$(kubectl -n mcp get secret claude-mcp-view-token -o jsonpath='{.data.ca\.crt}')"
+( umask 077; cat > ~/.kube/mcp-view.config <<EOF
+apiVersion: v1
+kind: Config
+clusters:
+- name: k3s
+  cluster:
+    server: ${SERVER}
+    certificate-authority-data: ${CA}
+users:
+- name: claude-mcp-view
+  user:
+    token: ${TOKEN}
+contexts:
+- name: claude-mcp-view@k3s
+  context: {cluster: k3s, user: claude-mcp-view}
+current-context: claude-mcp-view@k3s
+EOF
+)
+unset SERVER TOKEN CA
+```
+
+Then prove the credential layer on its own, before wiring anything up:
+
+```bash
+export KUBECONFIG=~/.kube/mcp-view.config
+kubectl get nodes                                # succeeds
+kubectl get secrets -A                           # Forbidden
+kubectl -n <ns> scale deploy/<name> --replicas=1 # Forbidden
+```
+
+To rotate the token, delete the `claude-mcp-view-token` Secret. Flux recreates it with a fresh token. Then rebuild this file.
 
 ---
 

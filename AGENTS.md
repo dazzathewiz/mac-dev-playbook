@@ -18,6 +18,7 @@ Automate the setup of a new Mac to a known-good state: applications, CLI tools, 
 | `tasks/claude-mcp.yml` | Post-provision task: installs the GitHub MCP server's launch wrapper and registers it in Claude Desktop's config |
 | `tasks/proxmox-mcp.yml` | Post-provision task: installs the Proxmox MCP server via `uv`, its launch wrapper, and registers it in Claude Desktop's config |
 | `tasks/unraid-mcp.yml` | Post-provision task: installs the Unraid MCP server's launch wrapper (bridged over HTTP via `mcp-remote`) and registers it in Claude Desktop's config |
+| `tasks/kubernetes-mcp.yml` | Post-provision task: installs the Kubernetes MCP server's launch wrapper (`--read-only`, scoped single-context kubeconfig) and registers it in Claude Desktop's config |
 
 ## Workflow
 
@@ -46,6 +47,7 @@ The following are documented in `README.md` and should not be added to the playb
 - **SSH keys** — handled separately
 - **GitHub PAT for the Claude MCP server** — a secret, and `security add-generic-password` is interactive; see README
 - **Proxmox API token and Unraid bearer token for their MCP servers** — same reason; see README
+- **The scoped kubeconfig for the Kubernetes MCP server** (`~/.kube/mcp-view.config`) — it embeds a live ServiceAccount token; see README. It must hold exactly one context (the `claude-mcp-view` SA, declared in the fluxcd repo), never the admin context: this server has context-switching tools, so a second context would bypass `--read-only`
 
 ## Conventions
 
@@ -53,3 +55,12 @@ The following are documented in `README.md` and should not be added to the playb
 - Inline YAML comments require 2 spaces before `#`
 - The playbook is idempotent — changes should be safe to re-run
 - This repo is Apple Silicon only (`bootstrap.sh` assumes Homebrew at `/opt/homebrew`)
+
+## This repo is public
+
+Comments, docs, commit messages and PR descriptions describe **mechanism**, generically: what a task does and how, which flags and patterns it relies on, and how to verify it. They do not describe the deployment behind it.
+
+- **Keep out of public text:** IP addresses and network topology (subnets, VLANs, bind addresses, routing and VPN paths), certificate details, host and node inventories, and the dates or history of infrastructure changes.
+- **Deliberate security trade-offs stay private.** Where a design accepts a risk on purpose (for example, how a credential travels or why a weaker control is acceptable), don't explain or justify it here. That reasoning is recorded in private project knowledge. At most, say the choice is deliberate.
+- Values the playbook actually needs to run (a host name or URL in a `*_mcp_*` var) are fine. Commentary that explains what's behind them isn't.
+- **Redact before the first push.** A later commit or a force-push doesn't remove text from GitHub: old commits stay reachable through PR timelines, and PR description edits keep their history. Grep the branch diff, the commit messages and the PR body before pushing, not after.

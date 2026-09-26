@@ -81,6 +81,7 @@ homebrew_installed_packages:
   - unar
   - github-mcp-server          # homebrew-core; GitHub MCP server for Claude
   - uv                         # installs proxmox-mcp-server (not in homebrew)
+  - kubernetes-mcp-server      # homebrew-core; Kubernetes MCP server for Claude
 
 homebrew_taps:
   - datreeio/datree
@@ -213,19 +214,29 @@ proxmox_mcp_tool_routing: "true"
 
 # --- Unraid (remote HTTP on unNAS, bridged by mcp-remote) ---
 # The only server that doesn't run on this Mac. Read-only is enforced on
-# unNAS (READ_ONLY=true in the plugin config) plus the agent being bound to
-# its tailnet address — nothing here enforces it.
-#
-# unraid_mcp_url uses the tailnet address deliberately, not 10.10.2.10: the
-# subnet route SNATs, which would attribute every request to a prox node in
-# unNAS's logs. A MagicDNS name would be better still.
+# unNAS (READ_ONLY=true in the plugin config) — nothing here enforces it.
 unraid_mcp_bridge: "{{ homebrew_prefix }}/bin/mcp-remote"
 unraid_mcp_wrapper: "{{ ansible_facts.user_dir }}/.local/bin/unraid-mcp-claude"
 unraid_mcp_keychain_service: claude-unraid-mcp
-unraid_mcp_url: "http://100.109.145.48:8043/mcp"
+unraid_mcp_url: "http://unnas.dazzathewiz.com:8043/mcp"
+
+# --- Kubernetes (local, stdio, native binary from homebrew-core) ---
+# Read-only in two independent layers — see tasks/kubernetes-mcp.yml:
+# --read-only on the server, and a kubeconfig holding ONLY the
+# claude-mcp-view ServiceAccount context (fluxcd repo). Never point
+# kubernetes_mcp_kubeconfig at ~/.kube/config.
+#
+# The kubeconfig is built by hand (see README), not by this playbook.
+kubernetes_mcp_binary: "{{ homebrew_prefix }}/bin/kubernetes-mcp-server"
+kubernetes_mcp_wrapper: "{{ ansible_facts.user_dir }}/.local/bin/kubernetes-mcp-claude"
+kubernetes_mcp_kubeconfig: "{{ ansible_facts.user_dir }}/.kube/mcp-view.config"
+# core only: the default also loads `config`, whose kubeconfig view/context
+# tools do nothing useful against a single-context file.
+kubernetes_mcp_toolsets: core
 
 # Glob pattern to ansible task files to run after all other tasks are finished.
 post_provision_tasks:
   - tasks/claude-mcp.yml
   - tasks/proxmox-mcp.yml
   - tasks/unraid-mcp.yml
+  - tasks/kubernetes-mcp.yml

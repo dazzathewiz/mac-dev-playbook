@@ -1,0 +1,96 @@
+---
+# Provisions the launch wrapper for the Kubernetes MCP server
+# (containers/kubernetes-mcp-server) used by Claude Desktop, and registers it
+# in Claude Desktop's config. The binary itself comes from
+# homebrew_installed_packages (homebrew-core, native Go binary), NOT npx: the
+# npm package is a node shim that needs node on PATH and logs to stdout,
+# the MCP channel, on SIGTERM. Same rule as everywhere else here: never
+# resolve a package at launch time, always use absolute paths.
+#
+# Read-only is enforced in two independent layers, and both must hold alone:
+#   1. Server: --read-only (only readOnlyHint tools are exposed), plus
+#      --disable-multi-cluster and --toolsets core, so no context tools exist.
+#   2. Credential: kubernetes_mcp_kubeconfig holds exactly ONE context, for
+#      the claude-mcp-view ServiceAccount (built-in `view` + nodes read,
+#      declared in the fluxcd repo). If the admin context were reachable,
+#      switching to it would be the escalation path, and it never has to
+#      defeat --read-only. Never point this at ~/.kube/config.
+#
+# What this DOESN'T do: build that kubeconfig. It embeds a live SA token, so
+# it stays a one-time manual step (see README). This warns loudly if it's
+# missing rather than leaving a wrapper that fails silently at launch.
+#
+# Claude Desktop must be closed while this runs.
+
+- name: Ensure local bin directory exists
+  file:
+    path: "{{ ansible_facts.user_dir }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+# No Keychain read: the credential is the scoped kubeconfig itself (mode
+# 0600). Paths are resolved at play time: Claude Desktop spawns MCP servers
+# with a stripped environment, so the wrapper can't rely on $HOME or ~.
+- name: Install the Kubernetes MCP wrapper (scoped kubeconfig, read-only)
+  copy:
+    dest: "{{ kubernetes_mcp_wrapper }}"
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      # Managed by mac-dev-playbook — do not edit by hand.
+      set -euo pipefail
+      [ -r "{{ kubernetes_mcp_kubeconfig }}" ] || {
+        echo "kubernetes-mcp-claude: no scoped kubeconfig at {{ kubernetes_mcp_kubeconfig }}." >&2
+        echo "Build it from the claude-mcp-view SA token; see the mac-dev-playbook README." >&2
+        exit 1
+      }
+      export KUBECONFIG="{{ kubernetes_mcp_kubeconfig }}"
+      exec "{{ kubernetes_mcp_binary }}" \
+        --kubeconfig "{{ kubernetes_mcp_kubeconfig }}" \
+        --read-only \
+        --disable-multi-cluster \
+        --toolsets {{ kubernetes_mcp_toolsets }}
+
+- name: Check whether the scoped kubeconfig is present
+  stat:
+    path: "{{ kubernetes_mcp_kubeconfig }}"
+  register: kubernetes_mcp_kubeconfig_stat
+
+- name: Warn if the scoped kubeconfig has not been built
+  debug:
+    msg: >-
+      Kubernetes MCP kubeconfig missing at {{ kubernetes_mcp_kubeconfig }}.
+      Build it once, by hand, from the claude-mcp-view ServiceAccount token
+      (see README). Do NOT point it at, or merge it into, ~/.kube/config.
+  when: not kubernetes_mcp_kubeconfig_stat.stat.exists
+
+# --- Claude Desktop config: merge, never overwrite -------------------------
+# Same gating as the other MCP task files, for the same reasons: Claude
+# Desktop rewrites this file in its own format, so comparing rendered bytes
+# reports "changed" every run and the slurp-then-write-back can clobber the
+# app's concurrent writes. Only `command` is compared.
+
+- name: Read existing Claude Desktop config
+  slurp:
+    src: "{{ claude_desktop_config }}"
+  register: kubernetes_cfg_raw
+  failed_when: false
+
+- name: Parse existing config (empty if absent)
+  set_fact:
+    kubernetes_cfg: >-
+      {{ (kubernetes_cfg_raw.content | b64decode | from_json)
+         if (kubernetes_cfg_raw.content is defined) else {} }}
+
+- name: Register the kubernetes MCP server, preserving any others
+  copy:
+    dest: "{{ claude_desktop_config }}"
+    mode: "0600"
+    content: |
+      {{ kubernetes_cfg | combine({
+           'mcpServers': (kubernetes_cfg.mcpServers | default({}))
+             | combine({'kubernetes': {'command': kubernetes_mcp_wrapper}})
+         }, recursive=True) | to_nice_json }}
+  when: >-
+    (kubernetes_cfg.mcpServers | default({})).get('kubernetes', {}).get('command')
+      != kubernetes_mcp_wrapper
