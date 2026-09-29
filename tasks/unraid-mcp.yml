@@ -1,11 +1,13 @@
 ---
-# Provisions the launch wrapper for the Unraid MCP server (Unraid Management
-# Agent plugin) and registers it in Claude Desktop's config.
+# Provisions launch wrappers for the Unraid MCP servers (Unraid Management
+# Agent plugin) and registers them in Claude Desktop's config — one entry
+# per server in `unraid_mcp_servers`.
 #
-# Unlike the GitHub and Proxmox servers, this one does NOT run on the Mac.
-# It runs on unNAS and speaks HTTP on :8043. Claude Desktop's config is
-# stdio-only — it takes a `command`, never a `url` — so mcp-remote runs
-# locally as the stdio<->HTTP bridge. Hence node + mcp-remote.
+# Unlike the GitHub, Proxmox and Kubernetes servers, these do NOT run on
+# the Mac. Each runs on its Unraid host and speaks HTTP on :8043. Claude
+# Desktop's config is stdio-only — it takes a `command`, never a `url` — so
+# mcp-remote runs locally as the stdio<->HTTP bridge. Hence node +
+# mcp-remote.
 #
 # mcp-remote comes from npm_packages (global), NOT npx. Resolving the
 # package at every launch overran Claude Desktop's startup window and
@@ -14,14 +16,18 @@
 # launch time, and always use an absolute path — GUI apps don't inherit
 # shell PATH.
 #
-# What this DOESN'T do: provision the bearer token. It's a secret and
-# creating the Keychain item is interactive, so it stays a one-time manual
-# step. This warns loudly rather than leaving a wrapper that fails at launch.
+# Each server gets its own wrapper and its own Keychain item, so a token
+# is never shared between hosts.
 #
-# Read-only is enforced ON UNNAS (READ_ONLY=true in the plugin config),
-# not by anything here. That is a server-side flag rather than a scoped
-# credential — weaker than the PVEAuditor token behind the Proxmox server.
-# Re-test the refusal after any plugin update.
+# What this DOESN'T do: provision the bearer tokens. They're secrets and
+# creating a Keychain item is interactive, so it stays a one-time manual
+# step per server. This warns loudly rather than leaving a wrapper that
+# fails at launch.
+#
+# Read-only is enforced ON EACH UNRAID HOST (READ_ONLY=true in the plugin
+# config), not by anything here. That is a server-side flag rather than a
+# scoped credential — weaker than the PVEAuditor token behind the Proxmox
+# server. Re-test the refusal after any plugin update.
 #
 # Claude Desktop must be closed while this runs.
 
@@ -31,43 +37,61 @@
     state: directory
     mode: "0755"
 
-- name: Install the Unraid MCP wrapper (reads the bearer token from Keychain at launch)
+- name: Install an Unraid MCP wrapper per server (reads its bearer token from Keychain at launch)
   copy:
-    dest: "{{ unraid_mcp_wrapper }}"
+    dest: "{{ item.wrapper }}"
     mode: "0755"
     content: |
       #!/bin/bash
       # Managed by mac-dev-playbook — do not edit by hand.
       set -euo pipefail
-      TOKEN="$(security find-generic-password -a "$USER" -s {{ unraid_mcp_keychain_service }} -w 2>/dev/null)" || {
-        echo "unraid-mcp-claude: no Keychain item '{{ unraid_mcp_keychain_service }}'." >&2
-        echo "Create it with: security add-generic-password -a \"$USER\" -s {{ unraid_mcp_keychain_service }} -w" >&2
+      TOKEN="$(security find-generic-password -a "$USER" -s {{ item.keychain_service }} -w 2>/dev/null)" || {
+        echo "{{ item.wrapper | basename }}: no Keychain item '{{ item.keychain_service }}'." >&2
+        echo "Create it with: security add-generic-password -a \"$USER\" -s {{ item.keychain_service }} -w" >&2
         exit 1
       }
       # --allow-http: mcp-remote refuses non-HTTPS URLs, and the agent serves
       # HTTP only.
-      exec "{{ unraid_mcp_bridge }}" "{{ unraid_mcp_url }}" \
+      exec "{{ unraid_mcp_bridge }}" "{{ item.url }}" \
         --allow-http \
         --header "Authorization: Bearer ${TOKEN}"
+  loop: "{{ unraid_mcp_servers }}"
+  loop_control:
+    label: "{{ item.name }}"
 
-- name: Check whether the Unraid bearer token is present in Keychain
-  command: security find-generic-password -a "{{ ansible_facts.user_id }}" -s "{{ unraid_mcp_keychain_service }}"
+# Wrappers from an earlier layout. Removed so a stale wrapper can't be
+# registered by hand and silently point at the wrong server.
+- name: Remove superseded Unraid MCP wrappers
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ unraid_mcp_legacy_wrappers | default([]) }}"
+
+- name: Check whether each Unraid bearer token is present in Keychain
+  command: security find-generic-password -a "{{ ansible_facts.user_id }}" -s "{{ item.keychain_service }}"
+  loop: "{{ unraid_mcp_servers }}"
+  loop_control:
+    label: "{{ item.name }}"
   register: unraid_mcp_keychain
   changed_when: false
   failed_when: false
 
-- name: Warn if the Unraid bearer token has not been provisioned
+- name: Warn for any Unraid bearer token that has not been provisioned
   debug:
     msg: >-
-      Unraid MCP token missing from Keychain. Run once, by hand:
-      security add-generic-password -a "$USER" -s {{ unraid_mcp_keychain_service }} -w
-  when: unraid_mcp_keychain.rc != 0
+      Unraid MCP token for '{{ item.item.name }}' missing from Keychain. Run once, by hand:
+      security add-generic-password -a "$USER" -s {{ item.item.keychain_service }} -w
+  loop: "{{ unraid_mcp_keychain.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.rc != 0
 
 # --- Claude Desktop config: merge, never overwrite -------------------------
-# Same gating as the other two task files, for the same reasons: Claude
+# Same gating as the other MCP task files, for the same reasons: Claude
 # Desktop rewrites this file in its own format, so comparing rendered bytes
 # reports "changed" every run and the slurp-then-write-back can clobber the
-# app's concurrent writes. Only `command` is compared.
+# app's concurrent writes. Only each entry's `command` is compared, plus
+# whether any key in `unraid_mcp_legacy_keys` is still present.
 
 - name: Read existing Claude Desktop config
   slurp:
@@ -81,15 +105,31 @@
       {{ (unraid_cfg_raw.content | b64decode | from_json)
          if (unraid_cfg_raw.content is defined) else {} }}
 
-- name: Register the unraid MCP server, preserving any others
+- name: Collect desired and current commands for each Unraid server
+  set_fact:
+    unraid_mcp_desired: "{{ unraid_mcp_desired | default({}) | combine({item.name: {'command': item.wrapper}}) }}"
+    unraid_mcp_current: >-
+      {{ unraid_mcp_current | default({}) | combine({item.name: {'command':
+         (unraid_cfg.mcpServers | default({})).get(item.name, {}).get('command')}}) }}
+  loop: "{{ unraid_mcp_servers }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Find superseded Unraid entries still registered
+  set_fact:
+    unraid_mcp_stale_keys: >-
+      {{ (unraid_cfg.mcpServers | default({})).keys()
+         | select('in', unraid_mcp_legacy_keys | default([])) | list }}
+
+- name: Register the Unraid MCP servers, dropping superseded entries and preserving any others
   copy:
     dest: "{{ claude_desktop_config }}"
     mode: "0600"
     content: |
       {{ unraid_cfg | combine({
-           'mcpServers': (unraid_cfg.mcpServers | default({}))
-             | combine({'unraid': {'command': unraid_mcp_wrapper}})
-         }, recursive=True) | to_nice_json }}
-  when: >-
-    (unraid_cfg.mcpServers | default({})).get('unraid', {}).get('command')
-      != unraid_mcp_wrapper
+           'mcpServers': (unraid_cfg.mcpServers | default({}) | dict2items
+             | rejectattr('key', 'in', unraid_mcp_legacy_keys | default([]))
+             | items2dict)
+             | combine(unraid_mcp_desired, recursive=True)
+         }) | to_nice_json }}
+  when: unraid_mcp_desired != unraid_mcp_current or unraid_mcp_stale_keys | length > 0
