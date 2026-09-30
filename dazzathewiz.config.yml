@@ -216,17 +216,16 @@ proxmox_mcp_tool_routing: "true"
 # The only servers that don't run on this Mac. Read-only is enforced on
 # each host (READ_ONLY=true in the plugin config) — nothing here enforces
 # it. One entry per server: `name` is the mcpServers key (and so the tool
-# prefix Claude sees), and each has its own wrapper and Keychain item.
+# prefix Claude sees) and names its wrapper, ~/.local/bin/<name>-mcp-claude.
+# Each has its own Keychain item.
 unraid_mcp_bridge: "{{ homebrew_prefix }}/bin/mcp-remote"
 unraid_mcp_servers:
   - name: unnas
     url: "http://unnas.dazzathewiz.com:8043/mcp"
-    wrapper: "{{ ansible_facts.user_dir }}/.local/bin/unnas-mcp-claude"
     # Keeps the service name its Keychain item was created under.
     keychain_service: claude-unraid-mcp
   - name: unplay
     url: "http://unplay.dazzathewiz.com:8043/mcp"
-    wrapper: "{{ ansible_facts.user_dir }}/.local/bin/unplay-mcp-claude"
     keychain_service: claude-unplay-mcp
 # Superseded single-server layout: this key is removed from mcpServers and
 # this wrapper deleted, so neither can drift out of step with the above.

@@ -16,8 +16,8 @@
 # launch time, and always use an absolute path — GUI apps don't inherit
 # shell PATH.
 #
-# Each server gets its own wrapper and its own Keychain item, so a token
-# is never shared between hosts.
+# Each server gets its own wrapper (~/.local/bin/<name>-mcp-claude) and its
+# own Keychain item, so a token is never shared between hosts.
 #
 # What this DOESN'T do: provision the bearer tokens. They're secrets and
 # creating a Keychain item is interactive, so it stays a one-time manual
@@ -39,14 +39,14 @@
 
 - name: Install an Unraid MCP wrapper per server (reads its bearer token from Keychain at launch)
   copy:
-    dest: "{{ item.wrapper }}"
+    dest: "{{ ansible_facts.user_dir }}/.local/bin/{{ item.name }}-mcp-claude"
     mode: "0755"
     content: |
       #!/bin/bash
       # Managed by mac-dev-playbook — do not edit by hand.
       set -euo pipefail
       TOKEN="$(security find-generic-password -a "$USER" -s {{ item.keychain_service }} -w 2>/dev/null)" || {
-        echo "{{ item.wrapper | basename }}: no Keychain item '{{ item.keychain_service }}'." >&2
+        echo "{{ item.name }}-mcp-claude: no Keychain item '{{ item.keychain_service }}'." >&2
         echo "Create it with: security add-generic-password -a \"$USER\" -s {{ item.keychain_service }} -w" >&2
         exit 1
       }
@@ -105,11 +105,20 @@
       {{ (unraid_cfg_raw.content | b64decode | from_json)
          if (unraid_cfg_raw.content is defined) else {} }}
 
+# Reset first: the loop below accumulates into these, and they must be
+# defined even when unraid_mcp_servers is empty.
+- name: Start with no Unraid servers collected
+  set_fact:
+    unraid_mcp_desired: {}
+    unraid_mcp_current: {}
+
 - name: Collect desired and current commands for each Unraid server
   set_fact:
-    unraid_mcp_desired: "{{ unraid_mcp_desired | default({}) | combine({item.name: {'command': item.wrapper}}) }}"
+    unraid_mcp_desired: >-
+      {{ unraid_mcp_desired | combine({item.name: {'command':
+         ansible_facts.user_dir ~ '/.local/bin/' ~ item.name ~ '-mcp-claude'}}) }}
     unraid_mcp_current: >-
-      {{ unraid_mcp_current | default({}) | combine({item.name: {'command':
+      {{ unraid_mcp_current | combine({item.name: {'command':
          (unraid_cfg.mcpServers | default({})).get(item.name, {}).get('command')}}) }}
   loop: "{{ unraid_mcp_servers }}"
   loop_control:
