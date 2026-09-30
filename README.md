@@ -294,20 +294,26 @@ The playbook provisions the Proxmox MCP server for Claude Desktop, short of the 
 security add-generic-password -a "$USER" -s claude-proxmox-mcp -w
 ```
 
-## 🤖 Claude Desktop — Unraid MCP Server
+## 🤖 Claude Desktop — Unraid MCP Servers
 
-The playbook provisions the Unraid MCP server (via the Unraid Management Agent plugin) for Claude Desktop, short of the secret itself. Unlike the GitHub and Proxmox servers, **this one does not run on the Mac** — it runs on unNAS and speaks HTTP on `:8043`. Claude Desktop's config is stdio-only (`command`, never `url`), so [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) runs locally as the stdio↔HTTP bridge:
+The playbook provisions an Unraid MCP server (via the Unraid Management Agent plugin) for each host listed in `unraid_mcp_servers`, short of the secrets themselves. Unlike the other servers, **these do not run on the Mac** — each runs on its Unraid host and speaks HTTP on `:8043`. Claude Desktop's config is stdio-only (`command`, never `url`), so [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) runs locally as the stdio↔HTTP bridge:
 
 - `node` (providing `npm`) and the global `mcp-remote` package are installed via `homebrew_installed_packages` / `npm_packages`. `mcp-remote` is called by its resolved absolute path rather than via `npx` — resolving the package at every launch overran Claude Desktop's startup window and surfaced as "Server disconnected".
-- A launch wrapper is installed to `~/.local/bin/unraid-mcp-claude`. It reads a bearer token out of the macOS Keychain at launch and execs `mcp-remote` against `unraid_mcp_url` with `--allow-http`, which `mcp-remote` requires for a non-HTTPS URL.
-- The wrapper is registered as the `unraid` entry under `mcpServers`, using the same command-only convergence check as the other two servers.
+- Each server gets its own launch wrapper, `~/.local/bin/<name>-mcp-claude`, and its own Keychain item, so no bearer token is shared between hosts. The wrapper reads the token from Keychain at launch and execs `mcp-remote` against the server's `url` with `--allow-http`, which `mcp-remote` requires for a non-HTTPS URL.
+- Each wrapper is registered under `mcpServers` using the entry's `name` as the key — which is also the tool prefix Claude sees, so pick names that can't be confused. Same command-only convergence check as the other servers.
+- Keys listed in `unraid_mcp_legacy_keys` are removed from `mcpServers`, and files in `unraid_mcp_legacy_wrappers` are deleted, so a superseded registration can't linger alongside the current ones.
 
-Read-only is enforced **on unNAS** (`READ_ONLY=true` in the plugin config), not by anything in this repo — a server-side flag rather than a scoped credential, weaker than the Proxmox server's PVEAuditor token. Re-test the refusal after any plugin update.
+To add a server, append an entry (`name`, `url`, `keychain_service`) to `unraid_mcp_servers` and create its Keychain item. `unnas` keeps the service name its item was originally created under, `claude-unraid-mcp`, so it doesn't follow the `claude-<name>-mcp` pattern of the others.
 
-### One-time manual step: create the Keychain item (Unraid)
+Read-only is enforced **on each Unraid host** (`READ_ONLY=true` in the plugin config), not by anything in this repo — a server-side flag rather than a scoped credential, weaker than the Proxmox server's PVEAuditor token. Re-test the refusal on every host after any plugin update. After editing the plugin's config file by hand, restart the agent and confirm an unauthenticated request is refused (401) — an edit isn't applied until then.
+
+### One-time manual step: create the Keychain items (Unraid)
+
+One per server:
 
 ```bash
-security add-generic-password -a "$USER" -s claude-unraid-mcp -w
+security add-generic-password -a "$USER" -s claude-unraid-mcp -w   # unnas
+security add-generic-password -a "$USER" -s claude-unplay-mcp -w   # unplay
 ```
 
 ## 🤖 Claude Desktop — Kubernetes MCP Server
@@ -316,7 +322,7 @@ The playbook provisions the [Kubernetes MCP server](https://github.com/container
 
 - `kubernetes-mcp-server` is installed via Homebrew (`homebrew-core`, a native Go binary), not `npx`. The npm package is a node shim: it needs `node` on PATH, which Claude Desktop doesn't provide, and it `console.log`s to stdout (the MCP channel) when it gets a signal. Resolving it at launch would also repeat the startup-window overrun that hit `mcp-remote`.
 - A launch wrapper is installed to `~/.local/bin/kubernetes-mcp-claude`. It exports `KUBECONFIG` and passes `--kubeconfig`, both pointing at a scoped file (`~/.kube/mcp-view.config`, resolved to an absolute path at play time). It then `exec`s the server with `--read-only --disable-multi-cluster --toolsets core`.
-- The wrapper is registered as the `kubernetes` entry under `mcpServers`, using the same command-only convergence check as the other three servers.
+- The wrapper is registered as the `kubernetes` entry under `mcpServers`, using the same command-only convergence check as the other servers.
 
 **Read-only is enforced in two independent layers**, unlike Proxmox, which relies on its token alone:
 
@@ -466,4 +472,3 @@ Dotfiles installed:
 ## Author
 
 This project was forked from the creator [Jeff Geerling](https://www.jeffgeerling.com/) (originally inspired by [MWGriffin/ansible-playbooks](https://github.com/MWGriffin/ansible-playbooks)).
-

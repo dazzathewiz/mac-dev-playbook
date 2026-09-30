@@ -212,13 +212,27 @@ proxmox_mcp_verify_ssl: "1"
 # context on every request. Requires the [router] extra.
 proxmox_mcp_tool_routing: "true"
 
-# --- Unraid (remote HTTP on unNAS, bridged by mcp-remote) ---
-# The only server that doesn't run on this Mac. Read-only is enforced on
-# unNAS (READ_ONLY=true in the plugin config) — nothing here enforces it.
+# --- Unraid (remote HTTP on each Unraid host, bridged by mcp-remote) ---
+# The only servers that don't run on this Mac. Read-only is enforced on
+# each host (READ_ONLY=true in the plugin config) — nothing here enforces
+# it. One entry per server: `name` is the mcpServers key (and so the tool
+# prefix Claude sees) and names its wrapper, ~/.local/bin/<name>-mcp-claude.
+# Each has its own Keychain item.
 unraid_mcp_bridge: "{{ homebrew_prefix }}/bin/mcp-remote"
-unraid_mcp_wrapper: "{{ ansible_facts.user_dir }}/.local/bin/unraid-mcp-claude"
-unraid_mcp_keychain_service: claude-unraid-mcp
-unraid_mcp_url: "http://unnas.dazzathewiz.com:8043/mcp"
+unraid_mcp_servers:
+  - name: unnas
+    url: "http://unnas.dazzathewiz.com:8043/mcp"
+    # Keeps the service name its Keychain item was created under.
+    keychain_service: claude-unraid-mcp
+  - name: unplay
+    url: "http://unplay.dazzathewiz.com:8043/mcp"
+    keychain_service: claude-unplay-mcp
+# Superseded single-server layout: this key is removed from mcpServers and
+# this wrapper deleted, so neither can drift out of step with the above.
+unraid_mcp_legacy_keys:
+  - unraid
+unraid_mcp_legacy_wrappers:
+  - "{{ ansible_facts.user_dir }}/.local/bin/unraid-mcp-claude"
 
 # --- Kubernetes (local, stdio, native binary from homebrew-core) ---
 # Read-only in two independent layers — see tasks/kubernetes-mcp.yml:

@@ -17,7 +17,7 @@ Automate the setup of a new Mac to a known-good state: applications, CLI tools, 
 | `requirements.yml` | Ansible Galaxy role dependencies |
 | `tasks/claude-mcp.yml` | Post-provision task: installs the GitHub MCP server's launch wrapper and registers it in Claude Desktop's config |
 | `tasks/proxmox-mcp.yml` | Post-provision task: installs the Proxmox MCP server via `uv`, its launch wrapper, and registers it in Claude Desktop's config |
-| `tasks/unraid-mcp.yml` | Post-provision task: installs the Unraid MCP server's launch wrapper (bridged over HTTP via `mcp-remote`) and registers it in Claude Desktop's config |
+| `tasks/unraid-mcp.yml` | Post-provision task: installs a launch wrapper per Unraid MCP server in `unraid_mcp_servers` (bridged over HTTP via `mcp-remote`) and registers each in Claude Desktop's config, removing superseded entries |
 | `tasks/kubernetes-mcp.yml` | Post-provision task: installs the Kubernetes MCP server's launch wrapper (`--read-only`, scoped single-context kubeconfig) and registers it in Claude Desktop's config |
 
 ## Workflow
@@ -34,6 +34,7 @@ The bootstrap and playbook are intentionally run as separate steps:
 - **Change macOS system preferences** → edit `dotfiles/.osx` (in the dotfiles repo)
 - **Change Dock layout** → edit `dockitems_persist` / `dockitems_remove` in `dazzathewiz.config.yml`
 - **Add Ansible roles or tasks** → edit `main.yml` and `requirements.yml`
+- **Add another Unraid MCP server** → append an entry to `unraid_mcp_servers` in `dazzathewiz.config.yml` (own wrapper, own Keychain item)
 - **Add a post-provision task** → add a task file under `tasks/` and list it in `post_provision_tasks` in `dazzathewiz.config.yml`
 
 ## What Is Intentionally Not Automated
@@ -46,7 +47,7 @@ The following are documented in `README.md` and should not be added to the playb
 - **App Store sign-in** — must be done manually before running the playbook
 - **SSH keys** — handled separately
 - **GitHub PAT for the Claude MCP server** — a secret, and `security add-generic-password` is interactive; see README
-- **Proxmox API token and Unraid bearer token for their MCP servers** — same reason; see README
+- **Proxmox API token and Unraid bearer tokens (one per server) for their MCP servers** — same reason; see README
 - **The scoped kubeconfig for the Kubernetes MCP server** (`~/.kube/mcp-view.config`) — it embeds a live ServiceAccount token; see README. It must hold exactly one context (the `claude-mcp-view` SA, declared in the fluxcd repo), never the admin context: this server has context-switching tools, so a second context would bypass `--read-only`
 
 ## Conventions
