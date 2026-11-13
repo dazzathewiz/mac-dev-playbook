@@ -22,7 +22,9 @@ jobs:
       - name: Set up Python 3.
         uses: actions/setup-python@v6
         with:
-          python-version: '3.x'
+          # Pinned: '3.x' floats to releases ansible-core doesn't support
+          # yet, which crashes ansible-lint before it lints anything.
+          python-version: '3.14'
 
       - name: Install test dependencies.
         run: pip3 install yamllint ansible ansible-lint
