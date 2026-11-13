@@ -1,0 +1,100 @@
+---
+# Provisions the launch wrapper for the changedetection.io MCP server and
+# registers it in Claude Desktop's config.
+#
+# Like the Unraid servers, this one doesn't run on the Mac. changedetection
+# serves MCP itself as stateless Streamable HTTP (JSON-RPC over POST, no
+# SSE), so mcp-remote bridges stdio to it. `--transport http-only` stops
+# mcp-remote falling back to SSE, which the endpoint doesn't serve.
+#
+# The endpoint sits behind a reverse-proxy basic-auth layer, so the wrapper
+# sends two credentials: an `Authorization: Basic` header for the proxy and
+# an `x-api-key` header carrying changedetection's own MCP access token.
+# changedetection only reads `Authorization` when it holds a Bearer token,
+# so the two don't collide.
+#
+# What this DOESN'T do: create the MCP token or either Keychain item. Both
+# are secrets and `security add-generic-password` is interactive, so they
+# stay one-time manual steps (see README). This warns if either is missing.
+#
+# Claude Desktop must be closed while this runs.
+
+- name: Ensure local bin directory exists
+  file:
+    path: "{{ ansible_facts.user_dir }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Install the changedetection MCP wrapper (reads both secrets from Keychain at launch)
+  copy:
+    dest: "{{ changedetection_mcp_wrapper }}"
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      # Managed by mac-dev-playbook — do not edit by hand.
+      set -euo pipefail
+      # Claude Desktop doesn't pass the login shell's PATH, and mcp-remote's
+      # `#!/usr/bin/env node` shebang needs node on it.
+      export PATH="{{ homebrew_prefix }}/bin:/usr/bin:/bin"
+      secret() {
+        /usr/bin/security find-generic-password -a "$USER" -s "$1" -w 2>/dev/null || {
+          echo "changedetection-mcp-claude: no Keychain item '$1'." >&2
+          echo "Create it with: security add-generic-password -a \"$USER\" -s $1 -w" >&2
+          exit 1
+        }
+      }
+      TOKEN="$(secret {{ changedetection_mcp_keychain_service }})"
+      CREDS="$(secret {{ changedetection_mcp_basicauth_keychain_service }})"
+      BASIC="$(printf '%s' "$CREDS" | /usr/bin/base64)"
+      unset CREDS
+      exec "{{ changedetection_mcp_bridge }}" "{{ changedetection_mcp_url }}" \
+        --transport http-only \
+        --header "Authorization: Basic ${BASIC}" \
+        --header "x-api-key: ${TOKEN}"
+
+- name: Check whether each changedetection secret is present in Keychain
+  command: security find-generic-password -a "{{ ansible_facts.user_id }}" -s "{{ item }}"
+  loop:
+    - "{{ changedetection_mcp_keychain_service }}"
+    - "{{ changedetection_mcp_basicauth_keychain_service }}"
+  register: changedetection_mcp_keychain
+  changed_when: false
+  failed_when: false
+
+- name: Warn for any changedetection secret that has not been provisioned
+  debug:
+    msg: >-
+      Keychain item '{{ item.item }}' missing. Run once, by hand:
+      security add-generic-password -a "$USER" -s {{ item.item }} -w
+  loop: "{{ changedetection_mcp_keychain.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.rc != 0
+
+# --- Claude Desktop config: merge, never overwrite -------------------------
+# Same gating as the other MCP task files: only `command` is compared.
+
+- name: Read existing Claude Desktop config
+  slurp:
+    src: "{{ claude_desktop_config }}"
+  register: changedetection_cfg_raw
+  failed_when: false
+
+- name: Parse existing config (empty if absent)
+  set_fact:
+    changedetection_cfg: >-
+      {{ (changedetection_cfg_raw.content | b64decode | from_json)
+         if (changedetection_cfg_raw.content is defined) else {} }}
+
+- name: Register the changedetection MCP server, preserving any others
+  copy:
+    dest: "{{ claude_desktop_config }}"
+    mode: "0600"
+    content: |
+      {{ changedetection_cfg | combine({
+           'mcpServers': (changedetection_cfg.mcpServers | default({}))
+             | combine({'changedetection': {'command': changedetection_mcp_wrapper}})
+         }, recursive=True) | to_nice_json }}
+  when: >-
+    (changedetection_cfg.mcpServers | default({})).get('changedetection', {}).get('command')
+      != changedetection_mcp_wrapper
