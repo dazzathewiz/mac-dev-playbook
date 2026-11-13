@@ -248,9 +248,20 @@ kubernetes_mcp_kubeconfig: "{{ ansible_facts.user_dir }}/.kube/mcp-view.config"
 # tools do nothing useful against a single-context file.
 kubernetes_mcp_toolsets: core
 
+# --- changedetection.io (remote HTTP on the cluster, bridged by mcp-remote) ---
+# Write scope is set on the MCP access token itself (changedetection's own
+# per-token permissions), not here. Two Keychain items: the MCP token, and
+# the reverse proxy's basic-auth credential stored as `user:password`.
+changedetection_mcp_bridge: "{{ homebrew_prefix }}/bin/mcp-remote"
+changedetection_mcp_wrapper: "{{ ansible_facts.user_dir }}/.local/bin/changedetection-mcp-claude"
+changedetection_mcp_url: "https://changedetection.inf.dazzathewiz.com/mcp/v1"
+changedetection_mcp_keychain_service: claude-changedetection-mcp
+changedetection_mcp_basicauth_keychain_service: claude-changedetection-basicauth
+
 # Glob pattern to ansible task files to run after all other tasks are finished.
 post_provision_tasks:
   - tasks/claude-mcp.yml
   - tasks/proxmox-mcp.yml
   - tasks/unraid-mcp.yml
   - tasks/kubernetes-mcp.yml
+  - tasks/changedetection-mcp.yml

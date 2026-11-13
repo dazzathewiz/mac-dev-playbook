@@ -369,6 +369,40 @@ kubectl -n <ns> scale deploy/<name> --replicas=1 # Forbidden
 
 To rotate the token, delete the `claude-mcp-view-token` Secret. Flux recreates it with a fresh token. Then rebuild this file.
 
+## 🤖 Claude Desktop — changedetection.io MCP Server
+
+The playbook provisions a client for changedetection.io's built-in MCP server (0.70+), short of the secrets themselves. Like the Unraid servers it doesn't run on the Mac: the app serves MCP itself as stateless Streamable HTTP at `/mcp/v1` (JSON-RPC over POST only; GET returns 405), so `mcp-remote` bridges stdio to it.
+
+- A launch wrapper is installed to `~/.local/bin/changedetection-mcp-claude`. It reads two Keychain items at launch and execs `mcp-remote` with `--transport http-only` (no SSE fallback — the endpoint has none) and two headers:
+  - `Authorization: Basic …` for the reverse proxy's basic auth in front of the app.
+  - `x-api-key: <MCP token>` for changedetection itself. The app reads `Authorization` only when it carries a Bearer token and otherwise falls back to `x-api-key`, so the two credentials don't collide.
+- The wrapper exports `PATH` with the Homebrew prefix first. Claude Desktop doesn't pass the login shell's `PATH`, and `mcp-remote` starts through `#!/usr/bin/env node`.
+- Registered as the `changedetection` entry under `mcpServers`, same command-only convergence check as the other servers.
+
+What the connection can do is set on the token, in changedetection's **Settings → AI → MCP Server → Access tokens**. Appending `?readonly=1` to the URL caps a connection to read-only regardless of the token.
+
+### One-time manual steps (changedetection)
+
+1. In the app, enable the MCP server and create a named access token with the permissions you want. It's shown once.
+2. Create both Keychain items. Each prompts for its value, so neither lands in shell history:
+
+```bash
+security add-generic-password -a "$USER" -s claude-changedetection-mcp -T /usr/bin/security -w        # the MCP token
+security add-generic-password -a "$USER" -s claude-changedetection-basicauth -T /usr/bin/security -w  # user:password
+```
+
+`-T /usr/bin/security` puts the reading tool on the item's access list, so the wrapper reads it with no prompt — needed for unattended runs. To replace a value later, add `-U`.
+
+Then check both credentials against the endpoint before restarting Claude Desktop — a JSON list of tools means both headers were accepted:
+
+```bash
+curl -s https://<host>/mcp/v1 \
+  -u "$(security find-generic-password -s claude-changedetection-basicauth -w)" \
+  -H "x-api-key: $(security find-generic-password -s claude-changedetection-mcp -w)" \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
 ---
 
 ## Reconfiguring Settings
