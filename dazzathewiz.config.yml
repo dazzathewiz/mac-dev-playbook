@@ -82,6 +82,7 @@ homebrew_installed_packages:
   - github-mcp-server          # homebrew-core; GitHub MCP server for Claude
   - uv                         # installs proxmox-mcp-server (not in homebrew)
   - kubernetes-mcp-server      # homebrew-core; Kubernetes MCP server for Claude
+  - ollama                     # local model server; see tasks/local-llm.yml
 
 homebrew_taps:
   - datreeio/datree
@@ -258,6 +259,21 @@ changedetection_mcp_url: "https://changedetection.inf.dazzathewiz.com/mcp/v1"
 changedetection_mcp_keychain_service: claude-changedetection-mcp
 changedetection_mcp_basicauth_keychain_service: claude-changedetection-basicauth
 
+# ---------------------------------------------------------------------------
+# Local model server (Ollama) — see tasks/local-llm.yml
+# ---------------------------------------------------------------------------
+
+# Approved models. Pulled only when absent; never re-pulled.
+local_llm_models:
+  - qwen3.6:35b-a3b
+  - embeddinggemma
+# Model used by the PR-triage check-in and the weekly smoke test.
+local_llm_triage_model: qwen3.6:35b-a3b
+# Installs and loads the PR-triage check-in agent when true.
+pr_triage_enabled: false
+# Triage webhook base URL, read by the check-in agent.
+pr_triage_n8n_url: ""
+
 # Glob pattern to ansible task files to run after all other tasks are finished.
 post_provision_tasks:
   - tasks/claude-mcp.yml
@@ -265,3 +281,4 @@ post_provision_tasks:
   - tasks/unraid-mcp.yml
   - tasks/kubernetes-mcp.yml
   - tasks/changedetection-mcp.yml
+  - tasks/local-llm.yml

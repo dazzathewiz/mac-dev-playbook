@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>{{ local_llm_upgrade_label }}</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/bash</string><string>{{ local_llm_upgrade_script }}</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>{{ homebrew_prefix }}/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>OLLAMA_SERVER_LABEL</key><string>{{ local_llm_server_label }}</string>
+    <key>OLLAMA_SMOKE_MODEL</key><string>{{ local_llm_triage_model }}</string>
+  </dict>
+  <!-- Weekly, Sunday 10:00. A run missed while asleep fires on wake. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>0</integer>
+    <key>Hour</key><integer>10</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key><false/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>{{ ansible_facts.user_dir }}/Library/Logs/ollama/upgrade-launchd.log</string>
+  <key>StandardErrorPath</key><string>{{ ansible_facts.user_dir }}/Library/Logs/ollama/upgrade-launchd.log</string>
+</dict>
+</plist>

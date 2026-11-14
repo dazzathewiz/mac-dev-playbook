@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>{{ local_llm_triage_label }}</string>
+  <key>ProgramArguments</key>
+  <array><string>/usr/bin/python3</string><string>{{ local_llm_checkin_dir }}/pr_triage_checkin.py</string></array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>TRIAGE_N8N_URL</key><string>{{ pr_triage_n8n_url }}</string>
+    <key>TRIAGE_MODEL</key><string>{{ local_llm_triage_model }}</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>900</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>LowPriorityIO</key><true/>
+  <key>Nice</key><integer>10</integer>
+  <key>StandardOutPath</key><string>{{ ansible_facts.user_dir }}/Library/Logs/pr-triage/launchd.log</string>
+  <key>StandardErrorPath</key><string>{{ ansible_facts.user_dir }}/Library/Logs/pr-triage/launchd.log</string>
+</dict>
+</plist>
