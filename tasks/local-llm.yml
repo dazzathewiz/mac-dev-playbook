@@ -1,0 +1,166 @@
+---
+# Provisions the local model server: Ollama (from homebrew_installed_packages)
+# under its own LaunchAgent, the approved models, a weekly upgrade agent with
+# a smoke test, and the PR-triage check-in client.
+#
+# Agents are managed with `launchctl bootstrap`/`bootout` in the gui domain,
+# never `brew services`. An agent is bootstrapped only when it isn't loaded,
+# and re-bootstrapped only when its plist changed. That is done inline
+# (register + when) rather than by handler: the server must be back up before
+# the model tasks below, and a post-provision task file can't add handlers.
+#
+# Models change only by editing local_llm_models. A model already present is
+# never re-pulled, so a model can't update silently.
+#
+# The pr-triage agent is installed only when pr_triage_enabled is true, and
+# booted out and removed when it is false. Its client script is always
+# installed. Its Keychain item is created by hand (see README).
+#
+# Run on its own with:
+#   ansible-playbook main.yml -e @dazzathewiz.config.yml \
+#     -e '{"post_provision_tasks": ["tasks/local-llm.yml"]}' --tags post,local-llm
+
+- name: Local model server
+  tags: ['local-llm']
+  block:
+    - name: Set local model server facts
+      set_fact:
+        local_llm_uid: "{{ ansible_facts.user_uid }}"
+        local_llm_server_label: com.dazzathewiz.ollama
+        local_llm_upgrade_label: com.dazzathewiz.ollama-upgrade
+        local_llm_triage_label: com.dazzathewiz.pr-triage
+        local_llm_agents_dir: "{{ ansible_facts.user_dir }}/Library/LaunchAgents"
+        local_llm_upgrade_script: "{{ ansible_facts.user_dir }}/.local/bin/ollama-upgrade.sh"
+        local_llm_checkin_dir: "{{ ansible_facts.user_dir }}/.local/share/pr-triage"
+        local_llm_api: http://127.0.0.1:11434
+
+    - name: Define the managed LaunchAgents
+      set_fact:
+        local_llm_agents:
+          - label: "{{ local_llm_server_label }}"
+            template: local-llm/ollama.plist.j2
+            enabled: true
+          - label: "{{ local_llm_upgrade_label }}"
+            template: local-llm/ollama-upgrade.plist.j2
+            enabled: true
+          - label: "{{ local_llm_triage_label }}"
+            template: local-llm/pr-triage.plist.j2
+            enabled: "{{ pr_triage_enabled | bool }}"
+
+    - name: Ensure directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ local_llm_agents_dir }}"
+        - "{{ ansible_facts.user_dir }}/Library/Logs/ollama"
+        - "{{ ansible_facts.user_dir }}/.local/bin"
+        - "{{ local_llm_checkin_dir }}"
+
+    - name: Ensure the pr-triage log directory exists
+      file:
+        path: "{{ ansible_facts.user_dir }}/Library/Logs/pr-triage"
+        state: directory
+        mode: "0755"
+      when: pr_triage_enabled | bool
+
+    - name: Install the Ollama upgrade script
+      copy:
+        src: local-llm/ollama-upgrade.sh
+        dest: "{{ local_llm_upgrade_script }}"
+        mode: "0755"
+
+    - name: Install the PR-triage check-in client
+      copy:
+        src: local-llm/pr_triage_checkin.py
+        dest: "{{ local_llm_checkin_dir }}/pr_triage_checkin.py"
+        mode: "0755"
+
+    # --- LaunchAgents ------------------------------------------------------
+
+    - name: Check which agents are loaded
+      command: launchctl print gui/{{ local_llm_uid }}/{{ item.label }}
+      loop: "{{ local_llm_agents }}"
+      loop_control:
+        label: "{{ item.label }}"
+      register: local_llm_loaded
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Install plists for enabled agents
+      template:
+        src: "{{ item.template }}"
+        dest: "{{ local_llm_agents_dir }}/{{ item.label }}.plist"
+        mode: "0644"
+      loop: "{{ local_llm_agents | selectattr('enabled') | list }}"
+      loop_control:
+        label: "{{ item.label }}"
+      register: local_llm_plists
+
+    - name: Note which plists changed
+      set_fact:
+        local_llm_changed: >-
+          {{ local_llm_plists.results | selectattr('changed')
+             | map(attribute='item.label') | list }}
+
+    - name: Boot out agents that are disabled or whose plist changed
+      command: launchctl bootout gui/{{ local_llm_uid }}/{{ item.item.label }}
+      loop: "{{ local_llm_loaded.results }}"
+      loop_control:
+        label: "{{ item.item.label }}"
+      when:
+        - item.rc == 0
+        - (not item.item.enabled) or (item.item.label in local_llm_changed)
+
+    - name: Remove plists for disabled agents
+      file:
+        path: "{{ local_llm_agents_dir }}/{{ item.label }}.plist"
+        state: absent
+      loop: "{{ local_llm_agents | rejectattr('enabled') | list }}"
+      loop_control:
+        label: "{{ item.label }}"
+
+    # bootout returns before the service is fully torn down, so retry.
+    - name: Bootstrap enabled agents that are not loaded or were booted out
+      command: >-
+        launchctl bootstrap gui/{{ local_llm_uid }}
+        {{ local_llm_agents_dir }}/{{ item.item.label }}.plist
+      loop: "{{ local_llm_loaded.results }}"
+      loop_control:
+        label: "{{ item.item.label }}"
+      when:
+        - item.item.enabled
+        - (item.rc != 0) or (item.item.label in local_llm_changed)
+      register: local_llm_bootstrap
+      until: local_llm_bootstrap.rc == 0
+      retries: 5
+      delay: 2
+
+    # --- Models -----------------------------------------------------------
+
+    - name: Wait for the model server
+      uri:
+        url: "{{ local_llm_api }}/api/version"
+      register: local_llm_version
+      check_mode: false
+      until: local_llm_version.status == 200
+      retries: 30
+      delay: 2
+
+    - name: List models present locally
+      uri:
+        url: "{{ local_llm_api }}/api/tags"
+      register: local_llm_tags
+      check_mode: false
+
+    # Ollama reports an untagged name as `<name>:latest`.
+    - name: Pull approved models that are absent
+      command: "{{ homebrew_prefix }}/bin/ollama pull {{ item }}"
+      environment:
+        OLLAMA_HOST: "{{ local_llm_api }}"
+      loop: "{{ local_llm_models }}"
+      when: >-
+        (item if ':' in item else item ~ ':latest')
+          not in (local_llm_tags.json.models | map(attribute='name') | list)
