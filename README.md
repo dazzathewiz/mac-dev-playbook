@@ -437,6 +437,27 @@ Keychain gotchas:
 - The interactive `-w` prompt truncates long values, which is why the command above passes the value inline from the clipboard.
 - Editing the item in Keychain Access drops `/usr/bin/security` from its access list, and the wrapper then prompts or fails. Always (re)create the item with the CLI and `-T /usr/bin/security`.
 
+## 🧠 Local Model Server (Ollama)
+
+`tasks/local-llm.yml` installs and runs a local model server:
+
+- **Ollama** from Homebrew, run by its own LaunchAgent (`com.dazzathewiz.ollama`). The agent is managed with `launchctl bootstrap`/`bootout`, never `brew services`.
+- **Models** from `local_llm_models`. A model is pulled only if it's missing and is never re-pulled, so models change only when you edit that list and re-run the playbook. Removing a model from the list doesn't delete it.
+- **Weekly upgrade** (`com.dazzathewiz.ollama-upgrade`, Sundays): `~/.local/bin/ollama-upgrade.sh` runs `brew upgrade ollama`, restarts the server if the version changed, then smoke-tests it: `/api/version` responds, a `think:false` chat with `local_llm_triage_model` returns parseable JSON, and `/api/ps` shows that model on the `mlx` runner. Results go to `~/Library/Logs/ollama/upgrade.log`. A failure also raises a macOS notification. There's no automatic rollback.
+- **PR-triage check-in client** at `~/.local/share/pr-triage/pr_triage_checkin.py`. Its agent (`com.dazzathewiz.pr-triage`) is installed only when `pr_triage_enabled: true`. While it's `false` (the default), the agent is booted out and its plist removed.
+
+Never run `ollama signin`.
+
+### One-time manual step: create the Keychain item (PR triage)
+
+Needed only when enabling triage. It prompts for the token:
+
+```bash
+security add-generic-password -s pr-triage-n8n -a "$USER" -w
+```
+
+Then set `pr_triage_n8n_url` and `pr_triage_enabled: true`, and re-run the playbook.
+
 ---
 
 ## Reconfiguring Settings

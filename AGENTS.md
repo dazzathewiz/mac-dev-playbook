@@ -21,6 +21,7 @@ Automate the setup of a new Mac to a known-good state: applications, CLI tools, 
 | `tasks/kubernetes-mcp.yml` | Post-provision task: installs the Kubernetes MCP server's launch wrapper (`--read-only`, scoped single-context kubeconfig) and registers it in Claude Desktop's config |
 | `tasks/changedetection-mcp.yml` | Post-provision task: installs the changedetection.io MCP server's launch wrapper (bridged over HTTP via `mcp-remote`, two Keychain secrets) and registers it in Claude Desktop's config |
 | `tasks/homeassistant-mcp.yml` | Post-provision task: installs the Home Assistant (HA-MCP) server's launch wrapper (bridged over HTTP via `mcp-remote`, one Keychain secret used as the URL path) and registers it in Claude Desktop's config |
+| `tasks/local-llm.yml` | Post-provision task: runs Ollama under its own LaunchAgent, pulls the approved models in `local_llm_models` if absent, installs the weekly upgrade + smoke-test agent, and installs the PR-triage check-in client (its agent only when `pr_triage_enabled`) |
 
 ## Workflow
 
