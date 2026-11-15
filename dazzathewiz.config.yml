@@ -258,6 +258,14 @@ changedetection_mcp_url: "https://changedetection.inf.dazzathewiz.com/mcp/v1"
 changedetection_mcp_keychain_service: claude-changedetection-mcp
 changedetection_mcp_basicauth_keychain_service: claude-changedetection-basicauth
 
+# --- Home Assistant (HA-MCP, remote HTTP, bridged by mcp-remote) -----------
+# The Keychain item holds only the endpoint's secret path segment; the
+# wrapper appends it to the base URL. Admin-equivalent, by deliberate choice.
+homeassistant_mcp_bridge: "{{ homebrew_prefix }}/bin/mcp-remote"
+homeassistant_mcp_wrapper: "{{ ansible_facts.user_dir }}/.local/bin/homeassistant-mcp-claude"
+homeassistant_mcp_base_url: "http://docker.dazzathewiz.com:9584"
+homeassistant_mcp_keychain_service: claude-homeassistant-mcp
+
 # Glob pattern to ansible task files to run after all other tasks are finished.
 post_provision_tasks:
   - tasks/claude-mcp.yml
@@ -265,3 +273,4 @@ post_provision_tasks:
   - tasks/unraid-mcp.yml
   - tasks/kubernetes-mcp.yml
   - tasks/changedetection-mcp.yml
+  - tasks/homeassistant-mcp.yml

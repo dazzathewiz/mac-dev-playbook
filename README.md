@@ -403,6 +403,40 @@ curl -s https://<host>/mcp/v1 \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
+## 🤖 Claude Desktop — Home Assistant MCP Server
+
+The playbook provisions a client for **HA-MCP**, an MCP server that runs inside Home Assistant as an integration, short of the secret itself. It doesn't run on the Mac: HA-MCP serves stateless Streamable HTTP, so `mcp-remote` bridges stdio to it.
+
+- A launch wrapper is installed to `~/.local/bin/homeassistant-mcp-claude`. It reads one Keychain item at launch, appends it to `homeassistant_mcp_base_url` as the URL path, and execs `mcp-remote` with `--transport http-only` and `--allow-http` (`mcp-remote` refuses a non-HTTPS URL without it).
+- There's no auth header: the secret path segment is the credential, and a wrong path returns 404.
+- The wrapper exports `PATH` with the Homebrew prefix first, as the changedetection wrapper does.
+- Registered as the `homeassistant` entry under `mcpServers`, same command-only convergence check as the other servers.
+
+The secret URL is admin-equivalent, by deliberate choice. Rotate it with **Regenerate connect secrets now** in the HA-MCP entry's options, then recreate the Keychain item.
+
+### One-time manual steps (Home Assistant)
+
+1. In Home Assistant, install **HA-MCP** from **Settings → Marketplace** and restart.
+2. Create a dedicated, local-only **administrator** user for it.
+3. Add the **HA-MCP Server** integration entry with that login. Set **Remote access** to **Disabled** and **Network access** to **Local network**.
+4. In the entry's **Configure**, turn the **Conversation-agent LLM API** off.
+5. Copy the entry's direct URL, then create the Keychain item from the clipboard. It holds only the `private_…` path segment, not the whole URL:
+
+```bash
+security add-generic-password -U -a "$USER" -s claude-homeassistant-mcp -T /usr/bin/security -w "$(pbpaste | sed -E 's#.*/(private_[^/?]+).*#\1#')"
+```
+
+Check it without printing the secret — this should print `private_`:
+
+```bash
+security find-generic-password -a "$USER" -s claude-homeassistant-mcp -w | cut -c1-8
+```
+
+Keychain gotchas:
+
+- The interactive `-w` prompt truncates long values, which is why the command above passes the value inline from the clipboard.
+- Editing the item in Keychain Access drops `/usr/bin/security` from its access list, and the wrapper then prompts or fails. Always (re)create the item with the CLI and `-T /usr/bin/security`.
+
 ---
 
 ## Reconfiguring Settings
