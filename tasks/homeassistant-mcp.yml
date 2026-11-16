@@ -1,0 +1,87 @@
+---
+# Provisions the launch wrapper for the Home Assistant MCP server (HA-MCP,
+# running inside Home Assistant as an integration) and registers it in
+# Claude Desktop's config.
+#
+# Like the Unraid and changedetection servers, this one doesn't run on the
+# Mac. HA-MCP serves stateless Streamable HTTP, so mcp-remote bridges stdio
+# to it. `--transport http-only` stops mcp-remote falling back to SSE, and
+# `--allow-http` lets it use a non-HTTPS URL.
+#
+# There is no auth header: the endpoint's secret path segment is the
+# credential. The wrapper reads that segment from Keychain and appends it
+# to the base URL at launch, so it never sits in a config file.
+#
+# What this DOESN'T do: create the HA-MCP entry or the Keychain item. The
+# secret is created in Home Assistant and stored by hand (see README).
+# This warns if the item is missing.
+#
+# Claude Desktop must be closed while this runs.
+
+- name: Ensure local bin directory exists
+  file:
+    path: "{{ ansible_facts.user_dir }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Install the Home Assistant MCP wrapper (reads the secret path from Keychain at launch)
+  copy:
+    dest: "{{ homeassistant_mcp_wrapper }}"
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      # Managed by mac-dev-playbook — do not edit by hand.
+      set -euo pipefail
+      # Claude Desktop doesn't pass the login shell's PATH, and mcp-remote's
+      # `#!/usr/bin/env node` shebang needs node on it.
+      export PATH="{{ homebrew_prefix }}/bin:/usr/bin:/bin"
+      SECRET="$(/usr/bin/security find-generic-password -a "$USER" -s {{ homeassistant_mcp_keychain_service }} -w 2>/dev/null)" || {
+        echo "homeassistant-mcp-claude: no Keychain item '{{ homeassistant_mcp_keychain_service }}'." >&2
+        echo "Create it with: security add-generic-password -a \"$USER\" -s {{ homeassistant_mcp_keychain_service }} -w" >&2
+        exit 1
+      }
+      exec "{{ homeassistant_mcp_bridge }}" "{{ homeassistant_mcp_base_url }}/${SECRET}" \
+        --transport http-only \
+        --allow-http
+
+- name: Check whether the Home Assistant MCP secret is present in Keychain
+  command: security find-generic-password -a "{{ ansible_facts.user_id }}" -s "{{ homeassistant_mcp_keychain_service }}"
+  register: homeassistant_mcp_keychain
+  changed_when: false
+  failed_when: false
+
+- name: Warn if the Home Assistant MCP secret has not been provisioned
+  debug:
+    msg: >-
+      Keychain item '{{ homeassistant_mcp_keychain_service }}' missing. Run once, by hand
+      (see README for how to extract the value):
+      security add-generic-password -a "$USER" -s {{ homeassistant_mcp_keychain_service }} -T /usr/bin/security -w
+  when: homeassistant_mcp_keychain.rc != 0
+
+# --- Claude Desktop config: merge, never overwrite -------------------------
+# Same gating as the other MCP task files: only `command` is compared.
+
+- name: Read existing Claude Desktop config
+  slurp:
+    src: "{{ claude_desktop_config }}"
+  register: homeassistant_cfg_raw
+  failed_when: false
+
+- name: Parse existing config (empty if absent)
+  set_fact:
+    homeassistant_cfg: >-
+      {{ (homeassistant_cfg_raw.content | b64decode | from_json)
+         if (homeassistant_cfg_raw.content is defined) else {} }}
+
+- name: Register the Home Assistant MCP server, preserving any others
+  copy:
+    dest: "{{ claude_desktop_config }}"
+    mode: "0600"
+    content: |
+      {{ homeassistant_cfg | combine({
+           'mcpServers': (homeassistant_cfg.mcpServers | default({}))
+             | combine({'homeassistant': {'command': homeassistant_mcp_wrapper}})
+         }, recursive=True) | to_nice_json }}
+  when: >-
+    (homeassistant_cfg.mcpServers | default({})).get('homeassistant', {}).get('command')
+      != homeassistant_mcp_wrapper
