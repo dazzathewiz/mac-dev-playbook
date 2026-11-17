@@ -22,6 +22,7 @@ Automate the setup of a new Mac to a known-good state: applications, CLI tools, 
 | `tasks/changedetection-mcp.yml` | Post-provision task: installs the changedetection.io MCP server's launch wrapper (bridged over HTTP via `mcp-remote`, two Keychain secrets) and registers it in Claude Desktop's config |
 | `tasks/homeassistant-mcp.yml` | Post-provision task: installs the Home Assistant (HA-MCP) server's launch wrapper (bridged over HTTP via `mcp-remote`, one Keychain secret used as the URL path) and registers it in Claude Desktop's config |
 | `tasks/local-llm.yml` | Post-provision task: runs Ollama under its own LaunchAgent, pulls the approved models in `local_llm_models` if absent, installs the weekly upgrade + smoke-test agent, and installs the PR-triage check-in client (its agent only when `pr_triage_enabled`) |
+| `tasks/n8n-mcp.yml` | Post-provision task: installs the n8n instance-level MCP server's launch wrapper (bridged over HTTP via `mcp-remote`, one Keychain secret) and registers it in Claude Desktop's config |
 
 ## Workflow
 
@@ -54,6 +55,7 @@ The following are documented in `README.md` and should not be added to the playb
 - **The scoped kubeconfig for the Kubernetes MCP server** (`~/.kube/mcp-view.config`) — it embeds a live ServiceAccount token; see README. It must hold exactly one context (the `claude-mcp-view` SA, declared in the fluxcd repo), never the admin context: this server has context-switching tools, so a second context would bypass `--read-only`
 - **The changedetection MCP access token and the basic-auth credential** — secrets, created by hand into Keychain; see README. The token's permissions are set when it's created in the app, not here
 - **The Home Assistant MCP secret path** — a secret, created in Home Assistant and stored by hand into Keychain; see README. It is admin-equivalent, by deliberate choice
+- **The n8n instance-MCP access token** — a secret, created by hand into Keychain; see README. Unlike the infrastructure servers it is write-capable, by deliberate choice
 
 ## Conventions
 

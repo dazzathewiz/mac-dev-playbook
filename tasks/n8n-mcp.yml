@@ -1,0 +1,87 @@
+---
+# Provisions the launch wrapper for n8n's instance-level MCP server and
+# registers it in Claude Desktop's config.
+#
+# Like changedetection, this one doesn't run on the Mac. n8n serves MCP
+# itself as Streamable HTTP, so mcp-remote bridges stdio to it.
+# `--transport http-only` stops mcp-remote falling back to SSE.
+#
+# One credential: n8n's instance-MCP access token, sent as a Bearer token.
+#
+# What this DOESN'T do: create the token or its Keychain item. It's a secret,
+# so that stays a one-time manual step (see README). This warns if it's
+# missing.
+#
+# Claude Desktop must be closed while this runs.
+
+- name: Ensure local bin directory exists
+  file:
+    path: "{{ ansible_facts.user_dir }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Install the n8n MCP wrapper (reads the token from Keychain at launch)
+  copy:
+    dest: "{{ n8n_mcp_wrapper }}"
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      # Managed by mac-dev-playbook — do not edit by hand.
+      set -euo pipefail
+      # Claude Desktop doesn't pass the login shell's PATH, and mcp-remote's
+      # `#!/usr/bin/env node` shebang needs node on it.
+      export PATH="{{ homebrew_prefix }}/bin:/usr/bin:/bin"
+      secret() {
+        /usr/bin/security find-generic-password -a "$USER" -s "$1" -w 2>/dev/null || {
+          echo "n8n-mcp-claude: no Keychain item '$1'." >&2
+          echo "Create it with: security add-generic-password -a \"$USER\" -s $1 -T /usr/bin/security -w \"\$(pbpaste)\"" >&2
+          exit 1
+        }
+      }
+      TOKEN="$(secret {{ n8n_mcp_keychain_service }})"
+      exec "{{ n8n_mcp_bridge }}" "{{ n8n_mcp_url }}" \
+        --transport http-only \
+        --header "Authorization: Bearer ${TOKEN}"
+
+- name: Check whether the n8n secret is present in Keychain
+  command: security find-generic-password -a "{{ ansible_facts.user_id }}" -s "{{ n8n_mcp_keychain_service }}"
+  register: n8n_mcp_keychain
+  changed_when: false
+  failed_when: false
+
+- name: Warn if the n8n secret has not been provisioned
+  debug:
+    msg: >-
+      Keychain item '{{ n8n_mcp_keychain_service }}' missing. Copy the token,
+      then run once, by hand:
+      security add-generic-password -a "$USER" -s {{ n8n_mcp_keychain_service }}
+      -T /usr/bin/security -w "$(pbpaste)"
+  when: n8n_mcp_keychain.rc != 0
+
+# --- Claude Desktop config: merge, never overwrite -------------------------
+# Same gating as the other MCP task files: only `command` is compared.
+
+- name: Read existing Claude Desktop config
+  slurp:
+    src: "{{ claude_desktop_config }}"
+  register: n8n_cfg_raw
+  failed_when: false
+
+- name: Parse existing config (empty if absent)
+  set_fact:
+    n8n_cfg: >-
+      {{ (n8n_cfg_raw.content | b64decode | from_json)
+         if (n8n_cfg_raw.content is defined) else {} }}
+
+- name: Register the n8n MCP server, preserving any others
+  copy:
+    dest: "{{ claude_desktop_config }}"
+    mode: "0600"
+    content: |
+      {{ n8n_cfg | combine({
+           'mcpServers': (n8n_cfg.mcpServers | default({}))
+             | combine({'n8n': {'command': n8n_mcp_wrapper}})
+         }, recursive=True) | to_nice_json }}
+  when: >-
+    (n8n_cfg.mcpServers | default({})).get('n8n', {}).get('command')
+      != n8n_mcp_wrapper
