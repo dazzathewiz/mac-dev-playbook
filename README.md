@@ -437,6 +437,39 @@ Keychain gotchas:
 - The interactive `-w` prompt truncates long values, which is why the command above passes the value inline from the clipboard.
 - Editing the item in Keychain Access drops `/usr/bin/security` from its access list, and the wrapper then prompts or fails. Always (re)create the item with the CLI and `-T /usr/bin/security`.
 
+## 🤖 Claude Desktop — n8n MCP Server
+
+The playbook provisions a client for n8n's built-in instance-level MCP server, short of the secret itself. Like changedetection it doesn't run on the Mac: n8n serves MCP as Streamable HTTP at `/mcp-server/http`, so `mcp-remote` bridges stdio to it.
+
+- A launch wrapper is installed to `~/.local/bin/n8n-mcp-claude`. It reads the `claude-n8n-mcp` Keychain item at launch and execs `mcp-remote` with `--transport http-only` and an `Authorization: Bearer <token>` header. Without the token the endpoint returns 401.
+- The wrapper exports `PATH` with the Homebrew prefix first, as the changedetection wrapper does.
+- Registered as the `n8n` entry under `mcpServers`, same command-only convergence check as the other servers.
+
+Unlike the infrastructure servers, this token is write-capable, by deliberate choice.
+
+### One-time manual step: create the Keychain item (n8n)
+
+1. In n8n, enable the instance-level MCP server and copy its access token.
+2. With the token on the clipboard, create the Keychain item:
+
+```bash
+security add-generic-password -a "$USER" -s claude-n8n-mcp -T /usr/bin/security -w "$(pbpaste)"
+```
+
+Two gotchas:
+
+- **Don't let `-w` prompt for this token.** `security add-generic-password … -w` with an interactive prompt truncates long tokens. Pass it as `-w "$(pbpaste)"` instead.
+- **Don't edit the item in Keychain Access.** Editing it there removes `/usr/bin/security` from its access list, and every read then prompts for the login password. To change it, delete and recreate it with the CLI command above, keeping `-T /usr/bin/security` (or add `-U` to replace the value in place).
+
+Then check the token against the endpoint before restarting Claude Desktop — a JSON list of tools means it was accepted:
+
+```bash
+curl -s https://<host>/mcp-server/http \
+  -H "Authorization: Bearer $(security find-generic-password -s claude-n8n-mcp -w)" \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
 ## 🧠 Local Model Server (Ollama)
 
 `tasks/local-llm.yml` installs and runs a local model server:

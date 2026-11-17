@@ -267,6 +267,14 @@ homeassistant_mcp_wrapper: "{{ ansible_facts.user_dir }}/.local/bin/homeassistan
 homeassistant_mcp_base_url: "http://docker.dazzathewiz.com:9584"
 homeassistant_mcp_keychain_service: claude-homeassistant-mcp
 
+# --- n8n (remote HTTP on the cluster, bridged by mcp-remote) ---
+# Instance-level MCP server. One Keychain item: the instance-MCP access
+# token, sent as a Bearer token. Write-capable by deliberate choice.
+n8n_mcp_bridge: "{{ homebrew_prefix }}/bin/mcp-remote"
+n8n_mcp_wrapper: "{{ ansible_facts.user_dir }}/.local/bin/n8n-mcp-claude"
+n8n_mcp_url: "https://n8n.inf.dazzathewiz.com/mcp-server/http"
+n8n_mcp_keychain_service: claude-n8n-mcp
+
 # ---------------------------------------------------------------------------
 # Local model server (Ollama) — see tasks/local-llm.yml
 # ---------------------------------------------------------------------------
@@ -291,3 +299,4 @@ post_provision_tasks:
   - tasks/changedetection-mcp.yml
   - tasks/homeassistant-mcp.yml
   - tasks/local-llm.yml
+  - tasks/n8n-mcp.yml
