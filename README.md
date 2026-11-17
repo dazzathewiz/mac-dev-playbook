@@ -450,10 +450,10 @@ Never run `ollama signin`.
 
 ### One-time manual step: create the Keychain item (PR triage)
 
-Needed only when enabling triage. It prompts for the token:
+Needed only when enabling triage. Copy the token to the clipboard first, then create the item from it. Create or recreate the item only with this command, never by editing it in Keychain Access (see the Keychain gotchas under [Home Assistant](#one-time-manual-steps-home-assistant)):
 
 ```bash
-security add-generic-password -s pr-triage-n8n -a "$USER" -w
+security add-generic-password -a "$USER" -s pr-triage-n8n -T /usr/bin/security -w "$(pbpaste)"
 ```
 
 Then set `pr_triage_n8n_url` and `pr_triage_enabled: true`, and re-run the playbook.
